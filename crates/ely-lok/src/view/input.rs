@@ -16,6 +16,9 @@ actions!(lok_view, [Copy, Cut, Paste, NextField, PreviousField]);
 /// The key context of every LokView.
 pub const CONTEXT: &str = "LokView";
 
+/// The one run command that selects without editing the document.
+const SELECT_ALL: &str = "edit.select_all";
+
 /// Binds the clipboard keys; call once at startup.
 pub fn init(cx: &mut App) {
     cx.bind_keys([
@@ -86,7 +89,7 @@ impl Input {
             | Input::Visible(..)
             | Input::Part(_)
             | Input::Theme(_) => false,
-            Input::Run { commands, .. } => commands.iter().any(|(id, _)| *id != "edit.select_all"),
+            Input::Run { commands, .. } => commands.iter().any(|(id, _)| *id != SELECT_ALL),
             Input::Text { .. }
             | Input::Copy { cut: true }
             | Input::Paste
