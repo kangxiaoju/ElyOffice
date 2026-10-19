@@ -17,10 +17,14 @@ pub enum OfficeKind {
     Presentation,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DocumentState {
     Ready,
     Dirty,
+    /// A save is in flight.
+    Saving,
+    /// The last save failed; the reason is kept.
+    Failed(String),
     Closed,
     WorkerEnded,
 }
@@ -83,6 +87,8 @@ impl OfficeRuntime {
             format,
             access,
             saved_edits: 0,
+            saving: false,
+            failed: None,
         })
     }
 
@@ -103,6 +109,8 @@ pub struct OfficeSession {
     format: &'static str,
     access: Access,
     saved_edits: u64,
+    saving: bool,
+    failed: Option<String>,
 }
 
 impl OfficeSession {
@@ -113,6 +121,12 @@ impl OfficeSession {
     pub fn state(&self, cx: &App) -> DocumentState {
         if self.doc.is_none() {
             return DocumentState::Closed;
+        }
+        if self.saving {
+            return DocumentState::Saving;
+        }
+        if let Some(error) = &self.failed {
+            return DocumentState::Failed(error.clone());
         }
         if self.worker.lock().expect("the worker lock").ended().is_some() {
             return DocumentState::WorkerEnded;
@@ -138,10 +152,23 @@ impl OfficeSession {
     }
 
     fn save_to(&mut self, path: PathBuf, format: &'static str, cx: &App) -> io::Result<()> {
-        let doc = self.doc.as_ref().ok_or_else(|| io::Error::other("the office session is closed"))?;
-        doc.save_owned(&mut self.worker.lock().expect("the worker lock"), &file_url(&path), format)?;
-        self.saved_edits = self.surface.read(cx).edited();
-        Ok(())
+        self.saving = true;
+        let saved = (|| {
+            let doc = self.doc.as_ref().ok_or_else(|| io::Error::other("the office session is closed"))?;
+            doc.save_owned(&mut self.worker.lock().expect("the worker lock"), &file_url(&path), format)
+        })();
+        self.saving = false;
+        match saved {
+            Ok(()) => {
+                self.failed = None;
+                self.saved_edits = self.surface.read(cx).edited();
+                Ok(())
+            }
+            Err(error) => {
+                self.failed = Some(error.to_string());
+                Err(error)
+            }
+        }
     }
 
     pub fn set_read_only(&mut self, read_only: bool, cx: &mut App) {
