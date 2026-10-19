@@ -96,8 +96,16 @@ fn session_lifecycle_tracks_edits_saves_and_worker_end() {
         assert_eq!(writer.state(app), DocumentState::Dirty, "an edit dirties the session");
         writer.save(app).expect("the writer saves");
         assert_eq!(writer.state(app), DocumentState::Ready, "a save returns to ready");
+        // A Writer session must refuse to save a deck extension.
+        assert!(
+            writer.save_as(dir.path().join("as-deck.fodp"), app).is_err(),
+            "a writer refuses to save_as a presentation format"
+        );
         writer.close().expect("the writer closes");
         assert_eq!(writer.state(app), DocumentState::Closed, "a closed session is closed");
+        // Saving a closed session fails without marking it failed.
+        assert!(writer.save(app).is_err(), "a closed session cannot save");
+        assert_eq!(writer.state(app), DocumentState::Closed, "and stays closed, not failed");
 
         // An Impress session: open clean, then the worker ends underneath it.
         let impress = runtime

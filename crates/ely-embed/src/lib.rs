@@ -85,6 +85,7 @@ impl OfficeRuntime {
             surface,
             path,
             format,
+            kind,
             access,
             saved_edits: 0,
             saving: false,
@@ -107,6 +108,7 @@ pub struct OfficeSession {
     surface: Entity<LokView>,
     path: PathBuf,
     format: &'static str,
+    kind: OfficeKind,
     access: Access,
     saved_edits: u64,
     saving: bool,
@@ -144,7 +146,8 @@ impl OfficeSession {
 
     pub fn save_as(&mut self, path: impl Into<PathBuf>, cx: &App) -> io::Result<()> {
         let path = path.into();
-        let format = extension(&path)?;
+        // The target extension must still describe this session's kind.
+        let format = format_for(self.kind, &path)?;
         self.save_to(path.clone(), format, cx)?;
         self.path = path;
         self.format = format;
@@ -152,12 +155,24 @@ impl OfficeSession {
     }
 
     fn save_to(&mut self, path: PathBuf, format: &'static str, cx: &App) -> io::Result<()> {
+        // A closed session has no document to save; it is not a failure.
+        let Some(doc) = self.doc.as_ref() else {
+            return Err(io::Error::other("the office session is closed"));
+        };
         self.saving = true;
-        let saved = (|| {
-            let doc = self.doc.as_ref().ok_or_else(|| io::Error::other("the office session is closed"))?;
-            doc.save_owned(&mut self.worker.lock().expect("the worker lock"), &file_url(&path), format)
-        })();
-        self.saving = false;
+        // Reset on every exit, even a panic mid-save.
+        struct Saving<'a>(&'a mut bool);
+        impl Drop for Saving<'_> {
+            fn drop(&mut self) {
+                *self.0 = false;
+            }
+        }
+        let _reset = Saving(&mut self.saving);
+        let saved = doc.save_owned(
+            &mut self.worker.lock().unwrap_or_else(|poisoned| poisoned.into_inner()),
+            &file_url(&path),
+            format,
+        );
         match saved {
             Ok(()) => {
                 self.failed = None;
@@ -197,5 +212,24 @@ fn extension(path: &Path) -> io::Result<&'static str> {
         Some("fodt") => Ok("fodt"), Some("rtf") => Ok("rtf"), Some("odp") => Ok("odp"),
         Some("ppt") => Ok("ppt"), Some("pptx") => Ok("pptx"), Some("fodp") => Ok("fodp"),
         _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "unsupported office file extension")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OfficeKind, format_for};
+    use std::path::Path;
+
+    #[test]
+    fn format_for_holds_the_extension_to_its_kind() {
+        for format in ["odt", "doc", "docx", "fodt", "rtf"] {
+            assert_eq!(format_for(OfficeKind::Writer, Path::new(&format!("note.{format}"))).unwrap(), format);
+        }
+        for format in ["odp", "ppt", "pptx", "fodp"] {
+            assert_eq!(format_for(OfficeKind::Presentation, Path::new(&format!("deck.{format}"))).unwrap(), format);
+        }
+        // A Writer session must refuse to save a deck, and vice versa.
+        assert!(format_for(OfficeKind::Writer, Path::new("deck.fodp")).is_err());
+        assert!(format_for(OfficeKind::Presentation, Path::new("note.fodt")).is_err());
     }
 }
