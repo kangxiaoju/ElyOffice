@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Fonts the editor meets in the wild (PDF-03).
 
 use std::path::Path;

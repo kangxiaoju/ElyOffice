@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! The worker against generated PDFs.
 
 use std::path::Path;

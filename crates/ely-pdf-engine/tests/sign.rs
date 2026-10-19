@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Signing by update and checking what was signed (PDF-12, QA-15).
 
 use std::path::{Path, PathBuf};

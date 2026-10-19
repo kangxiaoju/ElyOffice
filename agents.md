@@ -187,7 +187,7 @@ cargo check --workspace
 cargo test --workspace
 rm -rf target/debug/incremental   每次构建或测试后都删（用户定：增量缓存会占满磁盘）
 cargo build -p ely-lok --bins   LOK 单测前先建 worker；单测不会自动重建它
-cargo build -p ely-pdf-engine --bins  ElyPDF 的 worker（链接 engines/mupdf-build，ELY_MUPDF_DIR 可改；运行时 ELY_PDF_WORKER 可指定）
+cargo build -p ely-pdf-engine --bins --features worker-bin  ElyPDF 的 worker（链接 engines/mupdf-build，ELY_MUPDF_DIR 可改；运行时 ELY_PDF_WORKER 可指定；客户端 `--lib` 不链 MuPDF）
 cargo run -p ely-doc          启动一个应用（ElyDoc 先 cargo build -p ely-lok --bins，LOK 取 ELY_LOK_DIR 或 engines/ 下的构建）；ELY_LOG 设日志级别；ELY_SMOKE=1 开窗口、画一帧即退出，ELY_SMOKE=hold 开着不抢焦点；ELY_NO_DIALOG=1 启动失败不弹对话框
 ```
 

@@ -356,6 +356,7 @@ def main():
     if sys.platform != "darwin":
         sys.exit("SKIP: the bench drives macOS windows")
     sh("cargo", "build", "--release", "-q", "--bins", "-p", "ely-lok", "-p", "ely-pdf-engine",
+       "--features", "ely-pdf-engine/worker-bin",
        *[arg for slug in APPS for arg in ("-p", slug)], cwd=ROOT)
     git = os.path.join(ROOT, "engines", "git", "bin", "git")
     found = samples.made(os.path.join(ROOT, "engines", "bench"), git)

@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Removal and cleaning, checked in the file (QA-14).
 
 use std::path::Path;

@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Worker records reach the app log; document text never.
 
 use std::{

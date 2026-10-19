@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Ely's edits read back by another reader, PDFKit (QA-13).
 #![cfg(target_os = "macos")]
 

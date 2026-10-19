@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! OCR and the hidden text layer, real worker (PDF-08).
 
 use std::path::{Path, PathBuf};

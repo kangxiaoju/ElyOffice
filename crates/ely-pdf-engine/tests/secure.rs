@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Protected copies and what they allow (PDF-11).
 
 use std::path::Path;

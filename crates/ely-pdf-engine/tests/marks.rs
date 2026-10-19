@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Annotations and form fields against the real worker (PDF-05, PDF-06).
 
 use std::path::Path;
