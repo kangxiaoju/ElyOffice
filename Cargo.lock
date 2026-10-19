@@ -1971,6 +1971,7 @@ dependencies = [
 name = "ely-embed"
 version = "0.1.8"
 dependencies = [
+ "ely-gpui-component",
  "ely-lok",
  "ely-pdf-engine",
  "gpui-pre",

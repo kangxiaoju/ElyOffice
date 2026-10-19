@@ -16,6 +16,8 @@ gpui.workspace = true
 pdf = ["dep:ely-pdf-engine"]
 [dev-dependencies]
 tempfile.workspace = true
+gpui = { workspace = true, features = ["test-support"] }
+ely-gpui-component = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true
