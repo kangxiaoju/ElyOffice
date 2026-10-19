@@ -23,7 +23,7 @@
 
 ```text
 apps/        八个应用，各自一个二进制
-crates/      ely-ui  ely-platform  ely-ipc（应用与引擎 worker 之间的帧）；ely-files ely-lok ely-office（文档应用共用的外壳：标签、会话、保存、关闭询问、冲突、密码；引擎为 LOK 或 MuPDF）ely-pdf-engine（MuPDF worker 与客户端）；ely-mail-engine 随其任务建
+crates/      ely-ui  ely-platform  ely-ipc（应用与引擎 worker 之间的帧）；ely-files ely-lok ely-embed（显式 worker/引擎路径的 Writer、Impress 可嵌入会话与 LokView surface）ely-office（文档应用共用的外壳：标签、会话、保存、关闭询问、冲突、密码；引擎为 LOK 或 MuPDF）ely-pdf-engine（MuPDF worker 与客户端）；ely-mail-engine 随其任务建
 reference/   上游源码，只读，不属于本项目，不审查
 engines/     下载的二进制与引擎构建产物，不入库，不审查；mupdf-src 是 reference/mupdf 加 patches/mupdf 的构建副本
 patches/     对上游的补丁，随源码发行（libreoffice、mupdf）

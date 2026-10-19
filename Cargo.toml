@@ -59,6 +59,7 @@ objc2-pdf-kit = { version = "0.3", default-features = false, features = ["PDFDoc
 
 ely-files = { path = "crates/ely-files" }
 ely-ipc = { path = "crates/ely-ipc" }
+ely-embed = { path = "crates/ely-embed" }
 ely-lok = { path = "crates/ely-lok" }
 ely-office = { path = "crates/ely-office" }
 ely-pdf-engine = { path = "crates/ely-pdf-engine" }

@@ -1,0 +1,21 @@
+[package]
+name = "ely-embed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ely-lok = { workspace = true, features = ["view"] }
+ely-pdf-engine = { workspace = true, optional = true }
+gpui.workspace = true
+
+
+[features]
+pdf = ["dep:ely-pdf-engine"]
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

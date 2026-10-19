@@ -97,6 +97,10 @@ impl Input {
     }
 }
 
+pub(super) fn accepts(read_only: bool, input: &Input) -> bool {
+    !read_only || !input.edits()
+}
+
 /// vcl modifier bits.
 const SHIFT: i32 = 0x1000;
 const MOD1: i32 = 0x2000;
@@ -225,6 +229,9 @@ fn apply(worker: &mut Worker, doc: &Doc, input: Input) -> io::Result<Option<Back
 impl LokView {
     /// Queues `input` in order; edits mark the view pending.
     pub(super) fn send(&mut self, input: Input) {
+        if !accepts(self.read_only, &input) {
+            return;
+        }
         self.sent += 1;
         if input.edits() {
             self.last_edit = self.sent;

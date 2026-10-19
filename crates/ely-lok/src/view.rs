@@ -147,6 +147,7 @@ pub struct LokView {
     fonts: Vec<String>,
     a11y: crate::A11y,
     tabs: Vec<i32>,
+    read_only: bool,
 }
 
 /// A document's size and page frames, in twips.
@@ -236,11 +237,22 @@ impl LokView {
             right_at: None,
             fonts: Vec::new(),
             a11y: crate::A11y::default(),
+            read_only: false,
             tabs: Vec::new(),
             watching: None,
         };
         view.watching = Some(view.watch(cx));
         view
+    }
+
+    /// Rejects document-changing input before it enters the worker queue.
+    pub fn set_read_only(&mut self, read_only: bool) {
+        self.read_only = read_only;
+    }
+
+    /// Whether document-changing input is rejected.
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
     }
 
     /// Repaints every tile; the kernel sent no notice.

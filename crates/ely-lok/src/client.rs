@@ -86,6 +86,11 @@ impl Doc {
         self.kind == 1
     }
 
+    /// Whether this is a presentation.
+    pub fn is_presentation(&self) -> bool {
+        self.kind == 2
+    }
+
     /// Whether this handle saw a later state than `other`.
     pub fn newer_than(&self, other: &Doc) -> bool {
         self.rev > other.rev
@@ -102,19 +107,24 @@ static SESSIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 impl Worker {
     /// Spawns the worker against `install` with an isolated profile (LOK-01).
     pub fn spawn(install: &Path, profile_dir: &Path) -> io::Result<Self> {
-        let mut worker = Self::spawn_mode(install, profile_dir, false)?;
+        Self::spawn_from(&worker_bin()?, install, profile_dir)
+    }
+
+    /// Spawns an explicit worker binary against an explicit install.
+    pub fn spawn_from(worker_bin: &Path, install: &Path, profile_dir: &Path) -> io::Result<Self> {
+        let mut worker = Self::spawn_mode(worker_bin, install, profile_dir, false)?;
         worker.ready()?;
         Ok(worker)
     }
 
     /// Starts the process only; the first request checks it.
     pub fn launch(install: &Path, profile_dir: &Path) -> io::Result<Self> {
-        Self::spawn_mode(install, profile_dir, false)
+        Self::spawn_mode(&worker_bin()?, install, profile_dir, false)
     }
 
     /// Spawns with the dev-only probes on, for tests.
     pub fn spawn_dev(install: &Path, profile_dir: &Path) -> io::Result<Self> {
-        let mut worker = Self::spawn_mode(install, profile_dir, true)?;
+        let mut worker = Self::spawn_mode(&worker_bin()?, install, profile_dir, true)?;
         worker.ready()?;
         Ok(worker)
     }
@@ -142,9 +152,8 @@ impl Worker {
     }
 
     /// Spawns with or without the dev probes.
-    fn spawn_mode(install: &Path, profile_dir: &Path, dev: bool) -> io::Result<Self> {
+    fn spawn_mode(worker_bin: &Path, install: &Path, profile_dir: &Path, dev: bool) -> io::Result<Self> {
         std::fs::create_dir_all(profile_dir)?;
-        let worker_bin = worker_bin()?;
         log::info!("lok: worker from {}", worker_bin.display());
         let mut command = Command::new(worker_bin);
         ely_ipc::windowless(&mut command)
