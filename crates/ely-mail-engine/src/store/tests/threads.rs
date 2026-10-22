@@ -1,16 +1,14 @@
 //! A v6 store links the messages it already holds.
 
-use super::{STEPS, account, open};
+use super::{STEPS, account, held, open};
 use crate::{MessageId, Role};
 
 #[test]
 fn a_v6_store_links_its_messages_on_upgrade() {
     let dir = tempfile::tempdir().unwrap();
-    let mut old = open(dir.path(), &STEPS[..6]).unwrap();
+    let old = open(dir.path(), &STEPS[..6]).unwrap();
     let ann = old.add_account(&account("ann@example.com")).unwrap();
-    let [inbox] = old
-        .set_folders(ann, &[("INBOX", Some(Role::Inbox))])
-        .unwrap()
+    let [inbox] = super::old_folders(&old, ann, &[("INBOX", Some(Role::Inbox))])
         .try_into()
         .unwrap();
     let mut ids = Vec::new();
@@ -29,7 +27,7 @@ fn a_v6_store_links_its_messages_on_upgrade() {
                 "INSERT INTO messages (mailbox, uidvalidity, uid, message_id, in_reply_to, refs,
                      sender, recipients, copies, content, date)
                  VALUES (?1, 1, ?2, ?3, ?4, ?5, '[]', '[]', '[]', ?6, ?2)",
-                rusqlite::params![inbox.0, uid as i64, id, reply, refs, "a".repeat(64)],
+                rusqlite::params![inbox.0, uid as i64, id, reply, refs, held(dir.path())],
             )
             .unwrap();
         ids.push(MessageId(old.conn.last_insert_rowid()));

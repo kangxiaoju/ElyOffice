@@ -25,6 +25,7 @@ const SPOTS: Record<string, [number, number, number, number]> = {
   ElyTable: [4.4, 0, 1.6, 4],
   ElyShow: [10.8, 0.5, 2.2, 4],
   ElyPDF: [12, 2.3, 0.3, 4],
+  ElyMail: [8.6, 6.6, 1, 4],
   ElyTree: [5.9, 5.6, 0, 4],
   ElyMark: [0.7, 4.3, 0.1, 4],
 };

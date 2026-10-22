@@ -86,6 +86,7 @@ fn reply_to(mail: &Mail) -> Draft {
         from: mail.from[0].clone(),
         to: mail.to.clone(),
         cc: mail.cc.clone(),
+        bcc: Vec::new(),
         subject: format!("Re: {}", mail.subject.as_deref().unwrap()),
         text: mail.text.clone().unwrap(),
         html: mail.html.clone(),
@@ -162,11 +163,9 @@ fn a_line_break_in_a_header_never_leaves() {
     file.attachments[0].name = Some("a.pdf\r\nX-Evil: 1".into());
     let mut email = base.clone();
     email.cc[0].email = "dee@example.net>\r\nBcc: <hidden@example.com".into();
-    let mut nameless = base.clone();
-    nameless.attachments[0].name = None;
     let mut cid = base.clone();
     cid.attachments[0].content_id = Some("a@b>\r\nX-Evil: 1".into());
-    for draft in [subject, name, file, email, nameless, cid] {
+    for draft in [subject, name, file, email, cid] {
         let err = build(&draft).err().unwrap();
         assert!(matches!(err, Error::Invalid(_)), "{err}");
     }

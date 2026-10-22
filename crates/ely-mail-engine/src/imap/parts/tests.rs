@@ -111,6 +111,11 @@ fn an_attached_message_root_waits_whole() {
     let node = node(&structure);
     assert_eq!(node.missing(), ["TEXT"]);
     assert_eq!(node.sections(), ["HEADER"]);
+    let head = "Content-Type: multipart/mixed; boundary=\"b1\"\nContent-Disposition: attachment\n\n";
+    let mail = rebuilt(&node, &[("HEADER", head)]);
+    let sections: Vec<_> = mail.attachments.iter().map(|part| part.section.as_deref()).collect();
+    assert_eq!(sections, [Some("TEXT")], "the reader names the part left out");
+    assert!(mail.attachments[0].bytes.is_empty());
 }
 
 #[test]

@@ -1,9 +1,10 @@
 use std::fs;
 
 use rusqlite::Connection;
+use sha2::{Digest, Sha256};
 
 use super::folders::Synced;
-use super::{BACKUPS, DB, open, schema::STEPS};
+use super::{BACKUPS, CONTENT, DB, open, schema::STEPS};
 use crate::{Account, Auth, Error, Protocol, Role, Security, Server};
 
 fn account(address: &str) -> Account {
@@ -22,9 +23,47 @@ fn account(address: &str) -> Account {
     }
 }
 
+/// Folders in a store left at an older version.
+fn old_folders(store: &super::Store, account: crate::AccountId, folders: &[(&str, Option<Role>)]) -> Vec<crate::MailboxId> {
+    let insert = "INSERT INTO mailboxes (account, name, role) VALUES (?1, ?2, ?3)";
+    let made = |(name, role): &(&str, Option<Role>)| {
+        store.conn.execute(insert, rusqlite::params![account.0, name, role.map(Role::name)]).unwrap();
+        crate::MailboxId(store.conn.last_insert_rowid())
+    };
+    folders.iter().map(made).collect()
+}
+
+/// Puts mail the way a pre-v18 store did.
+fn old_put(store: &mut super::Store, mailbox: crate::MailboxId, key: &crate::Key, fetched: crate::Fetched) -> crate::MessageId {
+    store.conn.execute_batch("ALTER TABLE messages ADD COLUMN ident TEXT").unwrap();
+    let id = store.put(mailbox, key, &[], fetched).unwrap();
+    store.conn.execute_batch("ALTER TABLE messages DROP COLUMN ident").unwrap();
+    id
+}
+
+/// An original on disk for a row written as SQL.
+fn held(dir: &std::path::Path) -> String {
+    let bytes = b"Subject: kept\r\n\r\nhi\r\n";
+    let hash: String = Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let folder = dir.join(CONTENT).join(&hash[..2]);
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(folder.join(&hash), bytes).unwrap();
+    hash
+}
+
+mod contacts;
 mod ids;
 mod listing;
+mod mbox;
+mod rebuilt;
+mod reindex;
+mod rules;
+mod side;
 mod threads;
+mod trim;
 
 const ADD: &str = "ALTER TABLE accounts ADD COLUMN nick TEXT";
 const BROKEN: &str = "ALTER TABLE nowhere ADD COLUMN nick TEXT";
@@ -129,7 +168,7 @@ fn a_v1_store_gains_sync_and_keeps_its_mail() {
                  (1, 7, 1, '[]', '[]', '[]', '[]', '[]', '{}'),
                  (1, 6, 2, '[]', '[]', '[]', '[]', '[]', NULL);",
             ann.0,
-            "a".repeat(64)
+            held(dir.path())
         ))
         .unwrap();
     drop(old);
@@ -143,6 +182,7 @@ fn a_v1_store_gains_sync_and_keeps_its_mail() {
         messages: 1,
         uncached: 0,
         partial: 0,
+        waiting: 0,
     };
     assert_eq!(store.synced(ann).unwrap(), synced);
     store

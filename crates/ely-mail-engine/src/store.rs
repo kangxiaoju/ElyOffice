@@ -12,20 +12,40 @@ use crate::{Error, Result};
 
 mod accounts;
 mod aside;
+mod changes;
+mod contacts;
+mod drafts;
+mod find;
 mod folders;
+mod identity;
 mod listing;
+mod mbox;
 mod messages;
+mod outbox;
+mod pushed;
+mod rebuilt;
+mod rules;
 mod schema;
 mod search;
 #[cfg(test)]
 mod tests;
 mod threads;
+mod trim;
 mod trusted;
 
 pub use accounts::Cached;
+pub use changes::Change;
+pub use contacts::{Contact, ContactId, Imported};
+pub use drafts::{DraftId, Left, Remote, Shelved, Stowed, Unsent};
+pub use find::{Field, Found, Search};
 pub use folders::{Held, LocalFolder, Synced};
+pub use identity::Identity;
 pub use listing::{Filter, Scope, Summary};
+pub use mbox::{Packed, Unpacked};
 pub use messages::{Fetched, Key, Stored};
+pub use outbox::{Filed, Filing, Going, Handed, Landing, Letter, OutboxId, Queued};
+pub(crate) use pushed::{Done, Pending, Settled};
+pub use rules::{Action, Arrivals, Match, Rule, RuleId};
 
 const DB: &str = "mail.db";
 const CONTENT: &str = "content";
@@ -71,10 +91,10 @@ impl Store {
         }
     }
 
-    /// The mailbox by name, made on first use.
+    /// The server mailbox by name, made on first use.
     pub fn mailbox(&self, account: AccountId, name: &str) -> Result<MailboxId> {
         let name = mailbox_name(name);
-        let find = "SELECT id FROM mailboxes WHERE account = ?1 AND name = ?2";
+        let find = "SELECT id FROM mailboxes WHERE account = ?1 AND name = ?2 AND NOT local";
         if let Some(id) = self
             .conn
             .query_row(find, params![account.0, name], |row| row.get(0))
@@ -131,10 +151,14 @@ fn open(dir: &Path, steps: &[&str]) -> Result<Store> {
         Some(format!(
             "written by a newer ElyMail (schema v{version}, this one reads v{target})"
         ))
-    } else if version < target {
-        upgrade(&mut conn, dir, version, steps).err()
     } else {
-        None
+        // Parked originals return before the upgrade reads them.
+        if version > 0 {
+            aside::recover(&conn, dir)?;
+        }
+        (version < target)
+            .then(|| upgrade(&mut conn, dir, version, steps).err())
+            .flatten()
     };
     if let Some(reason) = refused {
         log::warn!("mail: store opened read-only: {reason}");
@@ -149,7 +173,9 @@ fn open(dir: &Path, steps: &[&str]) -> Result<Store> {
     }
     conn.pragma_update(None, "foreign_keys", true)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
-    aside::recover(&conn, dir)?;
+    if version == 0 {
+        aside::recover(&conn, dir)?;
+    }
     log::info!("mail: store opened at schema v{target}");
     Ok(Store {
         conn,
@@ -168,7 +194,7 @@ fn upgrade(
     if version > 0 {
         backup(conn, dir, version).map_err(|err| format!("no backup before upgrade: {err}"))?;
     }
-    migrate(conn, version, steps).map_err(|err| {
+    migrate(conn, dir, version, steps).map_err(|err| {
         format!(
             "upgrade from schema v{version} to v{} failed: {err}",
             steps.len()
@@ -178,12 +204,20 @@ fn upgrade(
     Ok(())
 }
 
-fn migrate(conn: &mut Connection, version: usize, steps: &[&str]) -> Result<()> {
+fn migrate(conn: &mut Connection, dir: &Path, version: usize, steps: &[&str]) -> Result<()> {
     // A rebuilt parent would cascade into its children.
     conn.pragma_update(None, "foreign_keys", false)?;
     let tx = conn.transaction()?;
     for step in &steps[version..] {
         tx.execute_batch(step)?;
+    }
+    if version < schema::IDENTS && steps.len() >= schema::IDENTS {
+        let count = rebuilt::fill(&tx, dir)?;
+        log::info!("mail: {count} messages given their identity in the upgrade");
+    }
+    if version < schema::REINDEX && steps.len() >= schema::REINDEX {
+        let count = search::refill(&tx, dir)?;
+        log::info!("mail: {count} messages indexed again in the upgrade");
     }
     if tx.prepare("PRAGMA foreign_key_check")?.exists([])? {
         return Err(Error::Store("rows point at missing rows".into()));
@@ -195,10 +229,7 @@ fn migrate(conn: &mut Connection, version: usize, steps: &[&str]) -> Result<()> 
 fn backup(conn: &Connection, dir: &Path, version: usize) -> Result<()> {
     let folder = dir.join(BACKUPS);
     fs::create_dir_all(&folder).map_err(|err| disk("making the backup folder", err))?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|err| Error::Store(format!("the clock is before 1970: {err}")))?
-        .as_secs();
+    let now = now()?;
     let target = folder.join(format!("mail-v{version}-{now}.db"));
     let target = target
         .to_str()
@@ -206,6 +237,14 @@ fn backup(conn: &Connection, dir: &Path, version: usize) -> Result<()> {
     conn.execute("VACUUM INTO ?1", [target])?;
     log::info!("mail: store schema v{version} backed up before upgrade");
     Ok(())
+}
+
+/// Seconds since 1970.
+fn now() -> Result<i64> {
+    let since = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| Error::Store(format!("the clock is before 1970: {err}")))?;
+    Ok(since.as_secs() as i64)
 }
 
 /// Two levels: `content/ab/abcd…`.

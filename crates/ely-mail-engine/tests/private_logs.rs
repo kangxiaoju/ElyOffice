@@ -1,5 +1,4 @@
 //! The real logger at trace, around real protocol traffic.
-mod fake;
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use ely_mail_engine::{Imap, Pop, Secret, Security, Smtp};

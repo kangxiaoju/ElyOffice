@@ -55,7 +55,7 @@ impl Mail {
             .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::AddAccount), cx))
     }
 
-    fn body(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn body(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let error = |key: &str, detail: &str, cx: &App| {
             ErrorView::new("mail-error", IconName::TriangleAlert, text(cx, key, &[]))
                 .detail(detail.to_owned())
@@ -69,6 +69,9 @@ impl Mail {
             Some(Err(detail)) => return error("mail.store.unread", detail, cx),
             Some(Ok(accounts)) => accounts,
         };
+        if self.open == Open::Contacts {
+            return self.contacts_page(window, cx);
+        }
         if accounts.is_empty() {
             return EmptyState::new("mail-empty", IconName::Mail, text(cx, "mail.empty", &[]))
                 .action(self.add_button(cx))
@@ -109,8 +112,13 @@ impl Mail {
             .children(self.paused_banner(cx))
             .children(failed)
             .child(details)
+            .children(self.identity_editor(id, window, cx))
+            .children(self.rules_editor(id, protocol, window, cx))
             .child(self.sync_buttons(id, cx))
             .children(self.offline_switches(id, protocol, cx))
+            .child(self.import_button(id, cx))
+            .children(self.drafts_switch(id, protocol, cx))
+            .children(self.sent_copy_switch(id, account, cx))
             .child(div().child(remove));
         ScrollArea::new("mail-account-scroll")
             .vertical()
@@ -160,6 +168,14 @@ impl Mail {
                 let words = ely_ui::i18n::counted(cx, &value, n, &[("n", &n.to_string())]);
                 details = details.text(label(key), words);
             }
+            let waiting = match synced.waiting {
+                0 => label("mail.sync.waiting_none"),
+                n => {
+                    let count = n.to_string();
+                    ely_ui::i18n::counted(cx, "mail.sync.waiting_value", n, &[("n", &count)])
+                }
+            };
+            details = details.text(label("mail.sync.waiting"), waiting);
         }
         let failed = syncing.failed.as_ref().map(|error| {
             Banner::new(
@@ -213,7 +229,8 @@ impl Mail {
 
 /// What the rest download, then folders kept whole.
 pub fn imap_range(folders: &[LocalFolder], cx: &App) -> Vec<(SharedString, SharedString)> {
-    let (whole, rest): (Vec<_>, Vec<_>) = folders.iter().partition(|folder| folder.offline);
+    let synced = folders.iter().filter(|folder| !folder.local);
+    let (whole, rest): (Vec<_>, Vec<_>) = synced.partition(|folder| folder.offline);
     let label = |key: &str| text(cx, key, &[]);
     let days = sync::BODY_DAYS.to_string();
     let mut rows = Vec::new();
@@ -241,8 +258,9 @@ pub fn protocol_name(protocol: Protocol) -> &'static str {
 }
 
 impl Render for Mail {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let left = (!self.accounts().is_empty()).then(|| self.side.clone().into());
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Contacts need no account, so the side shows once read.
+        let left = matches!(self.accounts, Some(Ok(_))).then(|| self.side.clone().into());
         let read_only = self.read_only.as_ref().map(|reason| {
             Banner::new(
                 "mail-read-only",
@@ -253,7 +271,7 @@ impl Render for Mail {
         let shell = Shell::new(AppId::Mail.name(), &self.focus)
             .left(left)
             .children(read_only)
-            .child(self.body(cx));
+            .child(self.body(window, cx));
         div()
             .size_full()
             .key_context(menu::CONTEXT)
@@ -263,9 +281,15 @@ impl Render for Mail {
             )
             .on_action(cx.listener(|mail, _: &menu::RemoveAccount, _, cx| mail.ask_remove(cx)))
             .on_action(cx.listener(|mail, _: &menu::SyncAll, _, cx| mail.sync_all(cx)))
+            .on_action(cx.listener(|mail, _: &menu::NewMessage, _, cx| mail.write_new(cx)))
+            .on_action(cx.listener(|mail, _: &menu::OpenMessageFile, _, cx| mail.pick_eml(cx)))
             .child(shell)
             .children(self.add_dialog(cx))
             .children(self.remove_dialog(cx))
+            .children(self.delete_dialog(cx))
+            .children(self.erase_dialog(cx))
+            .children(self.unimport_dialog(cx))
+            .children(self.quit_dialog(cx))
     }
 }
 

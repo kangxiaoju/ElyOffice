@@ -36,7 +36,7 @@ fetch() { # name url rev [sparse paths...]
   echo "fetch $name $rev"
 }
 
-fetch Ely-GPUI-Components https://github.com/ELY-Open-Source/Ely-GPUI-Components.git d05d8f0a638f8d013df84ff33601d10228d1e446
+fetch Ely-GPUI-Components https://github.com/ELY-Open-Source/Ely-GPUI-Components.git bcaf2ccaa00b4d364f519b7eb33d88c4638f7e66
 fetch zed https://github.com/zed-industries/zed.git 1a28cff4b409169bac058bca40dfbfeb7621d19b
 fetch libreoffice-core https://github.com/LibreOffice/core.git 8221e31b3ac356a1623c672912a3d2b492f7e3d1 \
   include/LibreOfficeKit libreofficekit desktop/source/lib desktop/inc \

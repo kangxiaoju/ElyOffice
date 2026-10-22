@@ -1,5 +1,3 @@
-mod fake;
-
 use base64::{Engine, engine::general_purpose::STANDARD};
 use ely_mail_engine::{Error, Imap, Role, Secret, Security, system_tls};
 use fake::{certs, expect, login, send, serve};

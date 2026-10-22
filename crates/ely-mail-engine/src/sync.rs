@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    Account, AccountId, Error, Fetched, Got, Held, Imap, Key, MailboxId, Pop, Protocol, Result,
-    Role, Secret, Store, TlsConnector, Vault, oauth,
+    Account, AccountId, Error, Fetched, Held, Imap, Key, MailboxId, Pop, Protocol, Result, Role,
+    Secret, Store, TlsConnector, Vault, oauth, push,
 };
 
 /// Bodies come down for mail this recent.
@@ -17,7 +17,7 @@ pub const BODY_DAYS: i64 = 90;
 const BATCH: usize = 100;
 
 /// What one sync changed.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Report {
     pub folders: usize,
     pub headers: usize,
@@ -25,6 +25,8 @@ pub struct Report {
     pub removed: usize,
     /// POP3 messages deleted from the server.
     pub deleted: usize,
+    /// Changes made here that the server took.
+    pub pushed: usize,
 }
 
 /// The password, or an access token from the refresh token.
@@ -43,7 +45,7 @@ pub async fn secret(account: &Account, vault: &Vault) -> Result<Secret> {
     Ok(Secret::Token(tokens.access))
 }
 
-/// One pass over every folder; `now` is Unix seconds.
+/// One pass over all folders; `step` follows folders, then each.
 pub async fn imap(
     account: &Account,
     id: AccountId,
@@ -51,8 +53,11 @@ pub async fn imap(
     tls: &TlsConnector,
     store: &Mutex<Store>,
     now: i64,
+    step: &(dyn Fn() + Sync),
 ) -> Result<Report> {
     let mut imap = Imap::connect(&account.incoming, &account.login(secret), tls).await?;
+    // §12.3: changes go first, checked against the server.
+    let pushed = push::push(&mut imap, store, id).await?;
     let folders: Vec<_> = imap
         .folders()
         .await?
@@ -64,13 +69,16 @@ pub async fn imap(
         .map(|folder| (folder.name.as_str(), folder.role))
         .collect();
     let boxes = lock(store)?.set_folders(id, &named)?;
+    step();
     let day = since(now)?;
     let mut report = Report {
         folders: folders.len(),
+        pushed,
         ..Report::default()
     };
     for (folder, mailbox) in folders.iter().zip(boxes) {
         one(&mut imap, store, mailbox, &folder.name, &day, &mut report).await?;
+        step();
     }
     imap.logout().await?;
     lock(store)?.set_synced(id, now)?;
@@ -85,7 +93,21 @@ pub async fn imap(
     Ok(report)
 }
 
-/// New mail by UIDL; no folders, local copies stay.
+/// Only the queue of changes; no mail comes down.
+pub async fn changes(
+    account: &Account,
+    id: AccountId,
+    secret: Secret,
+    tls: &TlsConnector,
+    store: &Mutex<Store>,
+) -> Result<usize> {
+    let mut imap = Imap::connect(&account.incoming, &account.login(secret), tls).await?;
+    let pushed = push::push(&mut imap, store, id).await?;
+    imap.logout().await?;
+    Ok(pushed)
+}
+
+/// New mail by UIDL; copies stay; `step` after the inbox.
 pub async fn pop(
     account: &Account,
     id: AccountId,
@@ -93,6 +115,7 @@ pub async fn pop(
     tls: &TlsConnector,
     store: &Mutex<Store>,
     now: i64,
+    step: &(dyn Fn() + Sync),
 ) -> Result<Report> {
     let Protocol::Pop { keep } = account.protocol else {
         return Err(Error::Invalid("a POP3 sync of an IMAP account".into()));
@@ -102,18 +125,25 @@ pub async fn pop(
         [inbox] => inbox,
         _ => return Err(Error::Store("a POP3 account has one inbox".into())),
     };
+    step();
     let mut held = lock(store)?.uidls(inbox)?;
     let mut report = Report {
         folders: 1,
         ..Report::default()
     };
-    for (number, uidl) in pop.uids().await? {
+    let listed = pop.uids().await?;
+    lock(store)?.forget_gone(
+        inbox,
+        &listed.iter().map(|(_, uidl)| uidl.clone()).collect(),
+    )?;
+    for (number, uidl) in listed {
         if !held.contains(&uidl) {
             let bytes = pop.fetch(number).await?;
             let key = Key::Pop { uidl: uidl.clone() };
-            lock(store)?.put(inbox, &key, &[], Fetched::Whole(&bytes))?;
+            if put(store, inbox, key, &[], Fetched::Whole(&bytes))? {
+                report.bodies += 1;
+            }
             held.insert(uidl);
-            report.bodies += 1;
         }
         if !keep {
             pop.delete(number).await?;
@@ -151,11 +181,9 @@ async fn one(
         .map(|(_, held)| held);
     remove(store, gone, report)?;
     for (uid, held) in &held {
-        match server.get(uid) {
-            Some(flags) if *flags != held.flags => {
-                lock(store)?.set_flags(held.id, &strs(flags))?;
-            }
-            _ => {}
+        // The store keeps changes not yet sent.
+        if let Some(flags) = server.get(uid).filter(|flags| **flags != held.flags) {
+            lock(store)?.set_flags(held.id, &strs(flags))?;
         }
     }
     let key = |uid| Key::Imap {
@@ -172,8 +200,10 @@ async fn one(
         for batch in whole.chunks(BATCH) {
             for got in imap.bodies(batch).await? {
                 let fetched = Fetched::Whole(&got.bytes);
-                put(store, mailbox, key(got.uid), &got, fetched)?;
-                report.bodies += 1;
+                let flags = strs(&got.flags);
+                if put(store, mailbox, key(got.uid), &flags, fetched)? {
+                    report.bodies += 1;
+                }
             }
         }
         return Ok(());
@@ -183,7 +213,8 @@ async fn one(
     let mut bodies = Vec::new();
     for uid in server.keys() {
         match (held.get(uid), recent.contains(uid)) {
-            (None | Some(Held { body: false, .. }), true) => bodies.push(*uid),
+            // Trimmed for the cap, a body waits for a press.
+            (None | Some(Held { body: false, trimmed: false, .. }), true) => bodies.push(*uid),
             (None, false) => headers.push(*uid),
             _ => {}
         }
@@ -192,14 +223,10 @@ async fn one(
     bodies.sort_unstable();
     for batch in headers.chunks(BATCH) {
         for got in imap.headers(batch).await? {
-            put(
-                store,
-                mailbox,
-                key(got.uid),
-                &got,
-                Fetched::Headers(&got.bytes),
-            )?;
-            report.headers += 1;
+            let fetched = Fetched::Headers(&got.bytes);
+            if put(store, mailbox, key(got.uid), &strs(&got.flags), fetched)? {
+                report.headers += 1;
+            }
         }
     }
     for batch in bodies.chunks(BATCH) {
@@ -211,14 +238,10 @@ async fn one(
         let whole: Vec<u32> = whole.into_iter().map(|(uid, _)| uid).collect();
         if !whole.is_empty() {
             for got in imap.bodies(&whole).await? {
-                put(
-                    store,
-                    mailbox,
-                    key(got.uid),
-                    &got,
-                    Fetched::Whole(&got.bytes),
-                )?;
-                report.bodies += 1;
+                let fetched = Fetched::Whole(&got.bytes);
+                if put(store, mailbox, key(got.uid), &strs(&got.flags), fetched)? {
+                    report.bodies += 1;
+                }
             }
         }
         // §12.3: attachments wait for a request.
@@ -231,22 +254,27 @@ async fn one(
                 bytes: &got.bytes,
                 missing: &missing,
             };
-            put(store, mailbox, key(uid), &got, text)?;
-            report.bodies += 1;
+            if put(store, mailbox, key(uid), &strs(&got.flags), text)? {
+                report.bodies += 1;
+            }
         }
     }
     Ok(())
 }
 
+/// Whether it was kept; deleted meanwhile, it is not.
 fn put(
     store: &Mutex<Store>,
     mailbox: MailboxId,
     key: Key,
-    got: &Got,
+    flags: &[&str],
     fetched: Fetched,
-) -> Result<()> {
-    lock(store)?.put(mailbox, &key, &strs(&got.flags), fetched)?;
-    Ok(())
+) -> Result<bool> {
+    match lock(store)?.put(mailbox, &key, flags, fetched) {
+        Ok(_) => Ok(true),
+        Err(Error::Deleted) => Ok(false),
+        Err(err) => Err(err),
+    }
 }
 
 fn remove<'a>(
@@ -275,7 +303,8 @@ fn since(now: i64) -> Result<String> {
         .to_string())
 }
 
-fn lock(store: &Mutex<Store>) -> Result<MutexGuard<'_, Store>> {
+/// The store, or why a task broke it.
+pub fn lock(store: &Mutex<Store>) -> Result<MutexGuard<'_, Store>> {
     store
         .lock()
         .map_err(|_| Error::Store("a store task panicked".into()))

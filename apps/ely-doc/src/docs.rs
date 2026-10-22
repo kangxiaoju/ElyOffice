@@ -37,6 +37,8 @@ pub struct Docs {
     pub review: Entity<Review>,
     /// What the right column shows.
     pub side: Side,
+    /// The right column is shown.
+    pub siding: bool,
     pub offer: Option<ely_office::menu::Offer<ely_lok::menu::Offered>>,
     pub merge: Entity<crate::merge::Merge>,
     pub navigator: Entity<crate::navigate::Navigator>,
@@ -49,10 +51,14 @@ pub struct Docs {
     /// Dialog reads asked; a dialog or tab change voids older.
     pub dialog_asked: u64,
     dialog_seen: Seen,
+    /// Undo and Redo as the menus show them.
+    undo_menu: (bool, bool),
 }
 
 /// Open dialog kinds, Ely's and the shell's, and the tab.
 type Seen = (Option<std::mem::Discriminant<Dialog>>, Option<std::mem::Discriminant<ely_office::Dialog>>, Option<u64>);
+
+gpui::actions!(doc, [ToggleSidePanel]);
 
 /// The right column's panels.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -104,6 +110,21 @@ impl Host for Docs {
     }
 }
 
+/// ElyDoc's menus after File; `undo` greys Undo and Redo.
+fn menus(undo: (bool, bool), cx: &App) -> Vec<gpui::Menu> {
+    vec![
+        gpui::Menu::new(ely_ui::i18n::text(cx, "menu.edit", &[])).items(ely_office::undo_items(undo, cx)),
+        gpui::Menu::new(ely_ui::i18n::text(cx, "menu.view", &[])).items(
+            ely_office::zoom_items(false, cx)
+                .into_iter()
+                .chain([gpui::MenuItem::separator(), gpui::MenuItem::action(ely_ui::i18n::text(cx, "doc.side.toggle", &[]), ToggleSidePanel)]),
+        ),
+        crate::insert::menu(cx),
+        crate::review::menu(cx),
+        crate::merge::menu(cx),
+    ]
+}
+
 /// The window root with a blank document.
 pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
     ely_lok::init(cx);
@@ -125,19 +146,19 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
             Some(commands::CONTEXT),
         ),
         gpui::KeyBinding::new(
+            "secondary-alt-b",
+            ToggleSidePanel,
+            Some(commands::CONTEXT),
+        ),
+        gpui::KeyBinding::new(
             "secondary-[",
             crate::navigate::GoBack,
             Some(commands::CONTEXT),
         ),
     ]);
     ely_office::bind_zoom_keys(cx);
-    let menus = vec![
-        gpui::Menu::new(ely_ui::i18n::text(cx, "menu.view", &[])).items(ely_office::zoom_items(false, cx)),
-        crate::insert::menu(cx),
-        crate::review::menu(cx),
-        crate::merge::menu(cx),
-    ];
-    let root = ely_ui::document_root(app, docs.clone().into(), &ely_ui::commands::FILE, menus, window, cx);
+    ely_office::bind_undo_keys(cx);
+    let root = ely_ui::document_root(app, docs.clone().into(), &ely_ui::commands::FILE, menus((false, false), cx), window, cx);
     docs.update(cx, |docs, cx| {
         docs.core.root = root.downgrade();
         docs.own_window(window, cx);
@@ -153,7 +174,7 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
         opening.update(cx, |docs, cx| docs.open_file(path, cx))
     });
     let closing = docs.clone();
-    window.on_window_should_close(cx, move |window, cx| {
+    ely_gpui_component::shell::guard_close(window, cx, move |window, cx| {
         closing.update(cx, |docs, cx| docs.should_close(window, cx))
     });
     root
@@ -184,6 +205,7 @@ impl Docs {
             props,
             review,
             side: Side::Props,
+            siding: true,
             offer: None,
             merge,
             navigator,
@@ -192,7 +214,19 @@ impl Docs {
             going: None,
             dialog_asked: 0,
             dialog_seen: (None, None, None),
+            undo_menu: (false, false),
         }
+    }
+
+    /// Shows `side` in the right column, opening it.
+    pub fn show_side(&mut self, side: Side, cx: &mut Context<Self>) {
+        (self.side, self.siding) = (side, true);
+        cx.notify();
+    }
+
+    pub fn on_side_panel(&mut self, _: &ToggleSidePanel, _: &mut Window, cx: &mut Context<Self>) {
+        self.siding = !self.siding;
+        cx.notify();
     }
 
     /// A dialog or tab change ends earlier dialog reads.
@@ -216,8 +250,24 @@ impl Docs {
     }
 }
 
+impl Docs {
+    /// Greys Undo and Redo as the active document's kernel says.
+    fn sync_menus(&mut self, cx: &mut Context<Self>) {
+        let able = self.active_tab().map_or((false, false), |tab| ely_office::undo_able(tab.view.read(cx)));
+        if able != self.undo_menu {
+            self.undo_menu = able;
+            log::info!("doc: undo {}, redo {}", able.0, able.1);
+            cx.defer(move |cx| {
+                ely_ui::set_document_menus(AppId::Doc, &ely_ui::commands::FILE, menus(able, cx), cx);
+                cx.refresh_windows();
+            });
+        }
+    }
+}
+
 impl Render for Docs {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_menus(cx);
         let title = self
             .active_tab()
             .map_or_else(|| AppId::Doc.name().into(), |tab| tab.name.clone());
@@ -240,7 +290,7 @@ impl Render for Docs {
             .child(shell)
             .children(self.core_dialog(cx))
             .children(self.dialog_element(window, cx));
-        Self::bind_zoom(crate::insert::bind(root, cx), cx)
+        Self::bind_undo(Self::bind_zoom(crate::insert::bind(root, cx), cx), cx)
     }
 }
 

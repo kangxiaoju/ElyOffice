@@ -44,9 +44,27 @@ struct Limiting {
 
 impl gpui::Global for Limiting {}
 
+/// An app's own storage rows: reread on each visit.
+pub struct AppStorage {
+    pub read: std::rc::Rc<dyn Fn(&mut App)>,
+    pub rows: std::rc::Rc<dyn Fn(&App) -> Vec<AnyElement>>,
+    /// Its yes-or-no before deleting, when asked.
+    pub dialog: std::rc::Rc<dyn Fn(&App) -> Option<AnyElement>>,
+}
+
+impl gpui::Global for AppStorage {}
+
+/// The app's rows join every settings window's storage page.
+pub fn add_rows(storage: AppStorage, cx: &mut App) {
+    cx.set_global(storage);
+}
+
 impl SettingsView {
     /// Reads sizes and limits off the window thread.
     pub(super) fn read_storage(&mut self, cx: &mut Context<Self>) {
+        if let Some(read) = cx.try_global::<AppStorage>().map(|own| own.read.clone()) {
+            read(cx);
+        }
         let app = self.app;
         let read = cx.background_executor().spawn(async move {
             let usage = storage::usage(app).and_then(|usage| {
@@ -103,12 +121,19 @@ impl SettingsView {
         if let Some(failed) = self.storage.failed.clone() {
             section = section.row(Banner::new("storage-failed", Severity::Danger, failed));
         }
+        if let Some(own) = cx.try_global::<AppStorage>() {
+            for row in (own.rows)(cx) {
+                section = section.row(row);
+            }
+        }
         section.into_any_element()
     }
 
     /// The yes-or-no before data is deleted (§4.2).
     pub(super) fn storage_dialog(&self, this: WeakEntity<Self>, cx: &App) -> Option<AnyElement> {
-        let kind = self.storage.confirming?;
+        let Some(kind) = self.storage.confirming else {
+            return cx.try_global::<AppStorage>().and_then(|own| (own.dialog)(cx));
+        };
         let what = name(kind, cx);
         let message = match kind.at_next_start() {
             true => text(cx, "settings.storage.ask_later", &[("what", &what)]),

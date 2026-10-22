@@ -146,7 +146,7 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
     });
     // A clone is not left running behind a closed window.
     let closing = tree.clone();
-    window.on_window_should_close(cx, move |_, cx| {
+    ely_gpui_component::shell::guard_close(window, cx, move |_, cx| {
         closing.update(cx, |tree, cx| tree.stop_all(cx));
         true
     });

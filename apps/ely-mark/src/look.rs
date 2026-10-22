@@ -12,7 +12,18 @@ use crate::desk::Desk;
 actions!(
     mark,
     [
-        FocusMode, Typewriter, Narrow, Medium, Wide, Sans, Serif, Mono, Larger, Smaller, ActualSize
+        FocusMode,
+        Typewriter,
+        LineNumbers,
+        Narrow,
+        Medium,
+        Wide,
+        Sans,
+        Serif,
+        Mono,
+        Larger,
+        Smaller,
+        ActualSize
     ]
 );
 
@@ -41,6 +52,13 @@ pub struct Look {
     pub font: Font,
     /// Percent of the app's text size.
     pub size: u32,
+    /// Source mode numbers lines; 0.1.10's off key is dropped.
+    #[serde(rename = "source_line_numbers", default = "shown")]
+    pub line_numbers: bool,
+}
+
+fn shown() -> bool {
+    true
 }
 
 impl Default for Look {
@@ -51,6 +69,7 @@ impl Default for Look {
             width: Width::Medium,
             font: Font::Sans,
             size: 100,
+            line_numbers: true,
         }
     }
 }
@@ -81,6 +100,7 @@ impl Look {
             measure: Some(rems(measure)),
             font,
             scale: self.size as f32 / 100.0,
+            line_numbers: self.line_numbers,
         }
     }
 }
@@ -155,6 +175,9 @@ impl Desk {
             }))
             .on_action(cx.listener(|desk, _: &Typewriter, _, cx| {
                 desk.relook(|look| look.typewriter = !look.typewriter, cx)
+            }))
+            .on_action(cx.listener(|desk, _: &LineNumbers, _, cx| {
+                desk.relook(|look| look.line_numbers = !look.line_numbers, cx)
             }))
             .on_action(cx.listener(|desk, _: &Narrow, _, cx| {
                 desk.relook(|look| look.width = Width::Narrow, cx)
@@ -256,6 +279,11 @@ mod tests {
         assert_eq!((look.measure, look.scale), (Some(rems(64.0)), 1.1));
         let kept = std::fs::read_to_string(data.path().join("look.json")).expect("kept");
         assert!(kept.contains("\"wide\"") && kept.contains("110"), "{kept}");
+        assert!(document_look(&desk, cx).line_numbers, "on by default");
+        cx.dispatch_action(super::LineNumbers);
+        assert!(!document_look(&desk, cx).line_numbers, "the menu hides them");
+        let kept = std::fs::read_to_string(data.path().join("look.json")).expect("kept");
+        assert!(kept.contains("\"source_line_numbers\": false"), "{kept}");
     }
 
     #[test]
@@ -273,10 +301,23 @@ mod tests {
         .expect("a look");
         let look = super::load(&file).expect("it reads");
         assert!(look.focus);
+        assert!(look.line_numbers, "looks kept before numbers show them");
         assert_eq!(
             (look.width, look.font, look.size),
             (super::Width::Wide, super::Font::Serif, 120)
         );
+    }
+
+    #[test]
+    fn numbers_hidden_by_0_1_10_show_again() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let file = dir.path().join("look.json");
+        let kept = r#"{"focus":false,"typewriter":false,"width":"medium","font":"sans","size":100,"line_numbers":false}"#;
+        std::fs::write(&file, kept).expect("a look");
+        assert!(super::load(&file).expect("it reads").line_numbers);
+        let hidden = kept.replace("\"line_numbers\":false", "\"source_line_numbers\":false");
+        std::fs::write(&file, hidden).expect("a look");
+        assert!(!super::load(&file).expect("it reads").line_numbers);
     }
 
     #[gpui::test]

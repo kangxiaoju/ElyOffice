@@ -101,6 +101,38 @@ impl Account {
         Checked { incoming, outgoing }
     }
 
+    /// Hands one built message over; gives the server's limit.
+    pub async fn send(
+        &self,
+        secret: Secret,
+        envelope: &[String],
+        message: &[u8],
+        tls: &TlsConnector,
+    ) -> Result<Option<u64>> {
+        let mut smtp = Smtp::connect(&self.outgoing, &self.login(secret), tls).await?;
+        let limit = smtp.limit();
+        let sent = smtp.send(&self.address, envelope, message).await;
+        // The answer is in: the logout neither waits nor counts.
+        tokio::spawn(async move {
+            if let Err(err) = smtp.quit().await {
+                log::warn!("mail: SMTP logout after sending failed: {err}");
+            }
+        });
+        sent.map(|()| limit)
+    }
+
+    /// Gmail, Microsoft and iCloud file sent mail themselves.
+    pub fn files_sent_itself(&self) -> bool {
+        let known = [
+            "smtp.gmail.com",
+            "smtp.office365.com",
+            "smtp-mail.outlook.com",
+            "smtp.mail.me.com",
+        ];
+        let host = &self.outgoing.host;
+        self.auth != Auth::Password || known.iter().any(|it| host.eq_ignore_ascii_case(it))
+    }
+
     async fn check_incoming(&self, login: &Login, tls: &TlsConnector) -> Result<()> {
         match self.protocol {
             Protocol::Imap => {

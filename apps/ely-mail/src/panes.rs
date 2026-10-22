@@ -2,15 +2,21 @@
 
 use ely_gpui_component::{
     buttons::{ToggleGroup, ToggleItem},
-    feedback::ErrorView,
+    feedback::{EmptyState, ErrorView},
     layout::SplitPane,
     mail::MailList,
     primitives::IconName,
 };
 use ely_mail_engine::Filter;
-use gpui::{AnyElement, Axis, Context, IntoElement, ParentElement as _, Styled as _, div, px};
+use gpui::{
+    AnyElement, Axis, Context, InteractiveElement as _, IntoElement, ParentElement as _,
+    Styled as _, div, px,
+};
 
-use crate::mail::{Mail, text};
+use crate::{
+    boxes::Open,
+    mail::{Mail, text},
+};
 
 type Filtered = fn(Filter) -> bool;
 
@@ -31,7 +37,17 @@ impl Mail {
     pub fn panes(&self, cx: &mut Context<Self>) -> AnyElement {
         SplitPane::new("mail-panes", Axis::Horizontal, px(240.))
             .pane(self.list_pane(cx))
-            .pane(self.reader(cx))
+            .pane(match self.open {
+                Open::Drafts => self.draft_pane(cx),
+                Open::Outbox => self.outbox_pane(cx),
+                _ => div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .children(self.actions(cx))
+                    .child(div().flex_1().min_h_0().child(self.reader(cx)))
+                    .into_any_element(),
+            })
             .into_any_element()
     }
 
@@ -67,21 +83,42 @@ impl Mail {
             )
             .detail(detail.clone())
             .into_any_element(),
+            Some(Ok(mails)) if mails.is_empty() && self.seeking.unsearched.is_some() => {
+                let none = text(cx, "mail.search.none", &[]);
+                EmptyState::new("mail-search-none", IconName::SearchX, none).into_any_element()
+            }
             Some(Ok(mails)) => {
-                let this = cx.weak_entity();
-                MailList::new("mail-list", mails.clone())
+                let (this, starring) = (cx.weak_entity(), cx.weak_entity());
+                let list = MailList::new("mail-list", mails.clone())
                     .selected(self.listing.selected.clone())
                     .on_select(move |keys, _, cx| {
                         this.update(cx, |mail, cx| mail.select(keys, cx)).ok();
-                    })
-                    .into_any_element()
+                    });
+                // Drafts and the Outbox have no stars.
+                let starred = !matches!(self.open, Open::Drafts | Open::Outbox);
+                let list = match starred {
+                    true => list.on_star(move |key, on, _, cx| {
+                        starring.update(cx, |mail, cx| mail.star(key, on, cx)).ok();
+                    }),
+                    false => list,
+                };
+                list.into_any_element()
             }
         };
+        let lists_mail = !matches!(self.open, Open::Drafts | Open::Outbox);
+        let searched = matches!(self.open, Open::Inboxes | Open::Mailbox(..));
         div()
             .size_full()
             .flex()
             .flex_col()
-            .child(div().p_2().child(toggles))
+            .children(searched.then(|| self.search_bar(cx)))
+            .children(lists_mail.then(|| {
+                div()
+                    .debug_selector(|| "mail-filters".into())
+                    .px_2()
+                    .pb_2()
+                    .child(toggles)
+            }))
             .child(div().flex_1().min_h_0().child(list))
             .into_any_element()
     }

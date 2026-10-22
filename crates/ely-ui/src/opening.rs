@@ -4,7 +4,7 @@ use std::{io, path::PathBuf, time::Duration};
 
 use ely_platform::instance::Door;
 use futures::{StreamExt, channel::mpsc};
-use gpui::{AnyWindowHandle, App, Application, Global};
+use gpui::{App, Application, Global};
 
 /// How long a hand-over waits for the window.
 const TAKING: Duration = Duration::from_secs(5);
@@ -96,18 +96,14 @@ pub fn on_open(cx: &mut App, mut open: impl FnMut(PathBuf, &mut App) + 'static) 
     .detach();
 }
 
-/// Brings `main` forward for each hand-over, then queues its files.
-pub(crate) fn home(hands: Hands, main: AnyWindowHandle, cx: &mut App) {
+/// Each hand-over: the main window forward, then its files queued.
+pub(crate) fn home(hands: Hands, cx: &mut App) {
     let Hands { mut hands, queue } = hands;
     cx.spawn(async move |cx| {
         while let Some(hand) = hands.next().await {
-            let raised = cx.update(|cx| {
-                cx.activate(true);
-                main.update(cx, |_, window, _| window.activate_window())
-            });
             // No answer: the other copy says the files went untaken.
-            if let Err(error) = raised {
-                log::warn!("run: the main window is gone, so a hand-over is refused: {error}");
+            if cx.update(crate::tray::show_main).is_none() {
+                log::warn!("run: the main window is gone, so a hand-over is refused");
                 continue;
             }
             for path in hand.files {
@@ -168,6 +164,7 @@ mod tests {
 #[cfg(test)]
 mod home_tests {
     use super::*;
+    use gpui::AnyWindowHandle;
     use gpui::{Context, IntoElement, Render, TestAppContext, Window};
 
     struct Blank;
@@ -182,7 +179,10 @@ mod home_tests {
     fn homed(main: AnyWindowHandle, cx: &mut TestAppContext) -> (mpsc::UnboundedSender<Hand>, mpsc::UnboundedReceiver<PathBuf>) {
         let (sender, hands) = mpsc::unbounded();
         let (queue, asked) = mpsc::unbounded();
-        cx.update(|cx| home(Hands { hands, queue }, main, cx));
+        cx.update(|cx| {
+            crate::tray::set_main(ely_platform::AppId::Mark, main, cx);
+            home(Hands { hands, queue }, cx)
+        });
         (sender, asked)
     }
 

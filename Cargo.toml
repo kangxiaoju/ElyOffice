@@ -5,7 +5,7 @@ members = ["apps/*", "crates/*"]
 exclude = ["engines", "reference"]
 
 [workspace.package]
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
@@ -19,13 +19,14 @@ jiff = "0.2"
 anyhow = "1"
 directories = "6"
 dunce = "1"
-ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components", rev = "d05d8f0a638f8d013df84ff33601d10228d1e446" }
+ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components", rev = "bcaf2ccaa00b4d364f519b7eb33d88c4638f7e66" }
 env_logger = "0.11"
 gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false, features = ["stacker"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["font-kit", "wayland", "x11"] }
 futures = "0.3"
 libc = "0.2"
 log = "0.4"
+markdown = "=1.0.0"
 metal = "0.33"
 notify = "8"
 quick-xml = "0.41"
@@ -33,7 +34,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWork
 rfd = { version = "0.17", default-features = false }
 aes-gcm = "0.11"
 base64 = "0.23"
-arboard = { version = "3.6", default-features = false, features = ["image-data"] }
+arboard = { version = "3.6", default-features = false, features = ["image-data", "wayland-data-control"] }
 getrandom = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
 semver = { version = "1", features = ["serde"] }
@@ -44,7 +45,7 @@ html5ever = "0.39"
 sha2 = "0.10"
 tempfile = "3"
 ureq = "3"
-windows-sys = { version = "0.60", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Globalization", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Threading", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Com", "Win32_UI_Shell", "Win32_Security_Authentication_Identity"] }
+windows-sys = { version = "0.60", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Globalization", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Threading", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Com", "Win32_UI_Shell", "Win32_System_Registry", "Win32_Security_Authentication_Identity"] }
 windows = { version = "0.62", features = ["Data_Pdf", "Graphics_Imaging", "Storage_Streams", "Win32_Graphics_Gdi", "Win32_Graphics_Printing", "Win32_Storage_Xps", "Win32_System_Memory", "Win32_System_WinRT", "Win32_UI_Controls_Dialogs", "Win32_UI_Input_KeyboardAndMouse"] }
 lopdf = { version = "0.45", default-features = false }
 zbus = { version = "5", default-features = false, features = ["async-io"] }
@@ -85,3 +86,4 @@ all = { level = "warn", priority = -1 }
 [patch.crates-io]
 gpui-pre = { path = "vendor/gpui-pre" }
 gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
+mail-parser = { path = "vendor/mail-parser" }

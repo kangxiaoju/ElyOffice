@@ -1,5 +1,3 @@
-mod fake;
-
 use base64::{Engine, engine::general_purpose::STANDARD};
 use ely_mail_engine::{Error, Secret, Security, Smtp};
 use fake::{
@@ -165,16 +163,8 @@ async fn a_refused_recipient_keeps_the_server_words() {
             send("250 ok\n"),
             expect("RCPT TO:<nobody@example.com>"),
             send("550 5.1.1 No such user\n"),
-            expect("RSET"),
-            send("250 ok\n"),
-            expect("MAIL FROM:<ann@example.com>"),
-            send("250 ok\n"),
-            expect("RCPT TO:<bo@example.com>"),
-            send("250 ok\n"),
-            expect("DATA"),
-            send("354 go\n"),
-            Step::Data("Subject: x\n\nx".into()),
-            send("250 queued\n"),
+            expect("QUIT"),
+            send("221 bye\n"),
         ],
     )
     .await;
@@ -197,13 +187,7 @@ async fn a_refused_recipient_keeps_the_server_words() {
         matches!(&err, Error::Server(text) if text.contains("550") && text.contains("No such user")),
         "{err}"
     );
-    smtp.send(
-        "ann@example.com",
-        &["bo@example.com".to_owned()],
-        b"Subject: x\r\n\r\nx\r\n",
-    )
-    .await
-    .unwrap();
+    smtp.quit().await.unwrap();
     script.await.unwrap().unwrap();
 }
 

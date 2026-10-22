@@ -6,9 +6,9 @@ const KEYS: [&str; 3] = [
     "ELY_MICROSOFT_CLIENT_ID",
 ];
 
-/// Client IDs: CI secrets, else the local oauth.env.
+/// Client IDs: CI secrets, else the local cred.txt.
 fn main() {
-    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../oauth.env");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../cred.txt");
     println!("cargo:rerun-if-changed={}", file.display());
     for key in KEYS {
         println!("cargo:rerun-if-env-changed={key}");
@@ -16,7 +16,7 @@ fn main() {
     let text = match fs::read_to_string(&file) {
         Ok(text) => text,
         Err(err) if err.kind() == ErrorKind::NotFound => return,
-        Err(err) => panic!("oauth.env unreadable: {err}"),
+        Err(err) => panic!("cred.txt unreadable: {err}"),
     };
     for (number, line) in text.lines().enumerate() {
         let line = line.trim();
@@ -24,12 +24,12 @@ fn main() {
             continue;
         }
         let Some((key, value)) = line.split_once('=') else {
-            panic!("oauth.env line {}: expected KEY=value", number + 1);
+            panic!("cred.txt line {}: expected KEY=value", number + 1);
         };
         let key = key.trim();
         assert!(
             KEYS.contains(&key),
-            "oauth.env line {}: unknown key {key}",
+            "cred.txt line {}: unknown key {key}",
             number + 1
         );
         if env::var_os(key).is_none() {

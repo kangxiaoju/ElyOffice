@@ -1,7 +1,7 @@
 //! The settings window: shared settings and this app's own.
 
 use ely_gpui_component::{
-    buttons::SegmentedControl,
+    buttons::{Button, SegmentedControl},
     feedback::Banner,
     forms::{Input, InputEvent, Switch, TextInput},
     primitives::{IconName, Severity},
@@ -12,7 +12,7 @@ use ely_platform::{
     settings::{APPEARANCE, AUTHOR, Appearance, CHECK_UPDATES, LANGUAGE, Language, MOTION, Motion, OMARCHY_SYNC, Store, word},
 };
 use gpui::{
-    AppContext as _, Context, Entity, FocusHandle, Global, IntoElement, ParentElement, Render, SharedString, Styled,
+    AppContext as _, Context, Entity, FocusHandle, Global, InteractiveElement as _, IntoElement, ParentElement, Render, SharedString, Styled,
     Subscription, Window, WindowHandle, div,
 };
 use serde_json::Value;
@@ -22,7 +22,7 @@ use std::sync::{
 };
 
 use super::{current, set};
-use crate::{i18n::text, shell::Shell};
+use crate::{i18n::text, shell::Shell, updates::Checked};
 
 /// The open settings window, one per app.
 #[derive(Clone, Copy)]
@@ -86,6 +86,10 @@ impl SettingsView {
             }),
             cx.observe_global::<super::Current>(|this, cx| this.follow_author(cx)),
         ];
+        // A check's outcome shows as it lands.
+        if let Some(updates) = crate::updates::updater(cx) {
+            fields.push(cx.observe(&updates, |_, _, cx| cx.notify()));
+        }
         let git = (app == AppId::Tree).then(|| cx.new(|cx| TextInput::new(window, cx).label(text(cx, "settings.git.path", &[]))));
         let mut git_error = None;
         if let Some(git) = &git {
@@ -192,6 +196,9 @@ impl SettingsView {
         if self.git.is_some() {
             sections.push(("git", text(cx, "settings.git", &[]), IconName::GitBranch));
         }
+        if self.app == AppId::Mail {
+            sections.push(("mail", text(cx, "settings.mail", &[]), IconName::Bell));
+        }
         sections.push(("storage", text(cx, "settings.storage", &[]), IconName::HardDrive));
         sections.push(("diagnostics", text(cx, "settings.diagnostics", &[]), IconName::Bug));
         sections
@@ -230,14 +237,11 @@ impl SettingsView {
                     .control(language),
             )
             .row(SettingsRow::new(text(cx, "settings.motion", &[])).control(motion));
-        let updates = Switch::new("settings-updates", shared.check_updates)
-            .name(text(cx, "settings.updates", &[]))
-            .on_change(|on, _, cx| set(CHECK_UPDATES, Value::Bool(on), cx));
-        let mut section = section.row(
-            SettingsRow::new(text(cx, "settings.updates", &[]))
-                .description(text(cx, "settings.updates.hint", &[]))
-                .control(updates),
-        );
+        let mut section = match crate::updates::updater(cx) {
+            Some(updates) => self.updates(section, &updates.read(cx).checked, shared.check_updates, cx),
+            // A dev build does not update itself.
+            None => section,
+        };
         // Only where Omarchy is installed.
         if ely_platform::omarchy_current_dir().is_some() {
             let follow = Switch::new("settings-omarchy", shared.omarchy_sync)
@@ -248,12 +252,31 @@ impl SettingsView {
         section
     }
 
+    /// The launch switch, and a check the user starts.
+    fn updates(&self, section: SettingsSection, checked: &Option<Checked>, at_launch: bool, cx: &gpui::App) -> SettingsSection {
+        let switch = Switch::new("settings-updates", at_launch)
+            .name(text(cx, "settings.updates", &[]))
+            .on_change(|on, _, cx| set(CHECK_UPDATES, Value::Bool(on), cx));
+        let now = Button::new("settings-check-now", text(cx, "settings.check.now", &[]))
+            .disabled(matches!(checked, Some(Checked::Asking)))
+            .on_click(|_, _, cx| crate::updates::check_now(cx));
+        section
+            .row(
+                SettingsRow::new(text(cx, "settings.updates", &[]))
+                    .description(text(cx, "settings.updates.hint", &[]))
+                    .control(switch),
+            )
+            .row(SettingsRow::new(text(cx, "settings.check", &[])).description(status(self.app, checked, cx)).control(
+                div().debug_selector(|| "settings-check-now".into()).child(now),
+            ))
+    }
+
     fn page(&self, this: gpui::WeakEntity<Self>, cx: &gpui::App) -> gpui::AnyElement {
         match self.section.as_ref() {
             "documents" => {
-                let autosave = Switch::new("settings-autosave", super::autosave::on(cx))
+                let autosave = Switch::new("settings-autosave", super::switches::on(super::switches::AUTOSAVE, cx))
                     .name(text(cx, "settings.autosave", &[]))
-                    .on_change(|on, _, cx| super::autosave::set(on, cx));
+                    .on_change(|on, _, cx| super::switches::set(super::switches::AUTOSAVE, on, cx));
                 SettingsSection::new(text(cx, "settings.documents", &[]))
                     .row(
                         SettingsRow::new(text(cx, "settings.author", &[]))
@@ -280,6 +303,18 @@ impl SettingsView {
                 }
                 .into_any_element()
             }
+            "mail" => {
+                let notify = Switch::new("settings-notify", super::switches::on(super::switches::NOTIFY, cx))
+                    .name(text(cx, "settings.notify", &[]))
+                    .on_change(|on, _, cx| super::switches::set(super::switches::NOTIFY, on, cx));
+                SettingsSection::new(text(cx, "settings.mail", &[]))
+                    .row(
+                        SettingsRow::new(text(cx, "settings.notify", &[]))
+                            .description(text(cx, "settings.notify.hint", &[]))
+                            .control(notify),
+                    )
+                    .into_any_element()
+            }
             "storage" => self.storage_page(this, cx),
             "diagnostics" => self.diagnostics_page(this, cx),
             _ => self.general(cx).into_any_element(),
@@ -301,6 +336,28 @@ fn choices<T: Copy + PartialEq + 'static>(
             control.segment(*word, label(choice, cx), None)
         })
         .on_change(move |picked, _, cx| set(key, Value::String(picked.to_string()), cx))
+}
+
+/// This version and the last check's outcome.
+pub(super) fn status(app: AppId, checked: &Option<Checked>, cx: &gpui::App) -> SharedString {
+    let mut args = vec![("app", app.name()), ("version", env!("CARGO_PKG_VERSION"))];
+    let (newer, error);
+    let key = match checked {
+        None => "settings.check.current",
+        Some(Checked::Asking) => "settings.check.asking",
+        Some(Checked::Latest) => "settings.check.latest",
+        Some(Checked::Newer(version)) => {
+            newer = version.to_string();
+            args.push(("newer", &newer));
+            "settings.check.newer"
+        }
+        Some(Checked::Failed(said)) => {
+            error = said.clone();
+            args.push(("error", &error));
+            "settings.check.failed"
+        }
+    };
+    text(cx, key, &args)
 }
 
 /// ElyTree's Git program; empty is its own.

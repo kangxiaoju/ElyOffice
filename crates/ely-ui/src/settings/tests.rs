@@ -40,6 +40,7 @@ fn each_app_shows_its_own_sections(cx: &mut TestAppContext) {
         (AppId::Pdf, &["general", "documents", "storage", "diagnostics"]),
         (AppId::Tree, &["general", "git", "storage", "diagnostics"]),
         (AppId::Mark, &["general", "storage", "diagnostics"]),
+        (AppId::Mail, &["general", "mail", "storage", "diagnostics"]),
     ] {
         // As each app does before its first window.
         cx.update(|cx| {
@@ -93,4 +94,46 @@ fn only_the_main_window_carries_menus_and_updates(cx: &mut TestAppContext) {
     assert!(below_title(cx, main.into()) > menus, "the main window shows the update");
     let settings = cx.add_window(|window, cx| SettingsView::new(AppId::Mark, window, cx));
     assert_eq!(below_title(cx, settings.into()), gpui::px(0.0), "settings repeats neither");
+}
+
+#[gpui::test]
+fn the_status_names_this_version_and_the_check(cx: &mut TestAppContext) {
+    installed(cx);
+    use crate::updates::Checked;
+    cx.update(|cx| {
+        let line = |checked| super::window::status(AppId::Mark, &checked, cx).to_string();
+        let newer = line(Some(Checked::Newer(semver::Version::new(9, 1, 0))));
+        assert!(newer.contains("ElyMark") && newer.contains(env!("CARGO_PKG_VERSION")) && newer.contains("9.1.0"), "{newer}");
+        let failed = line(Some(Checked::Failed("no route".into())));
+        assert!(failed.contains("no route"), "{failed}");
+        assert_ne!(line(None), line(Some(Checked::Latest)));
+    });
+}
+
+/// Where the "Check Now" button sits, if shown.
+fn check_button(cx: &mut TestAppContext) -> Option<gpui::Bounds<gpui::Pixels>> {
+    let settings = cx.add_window(|window, cx| SettingsView::new(AppId::Mark, window, cx));
+    let mut shown = gpui::VisualTestContext::from_window(settings.into(), cx);
+    shown.run_until_parked();
+    shown.debug_bounds("settings-check-now")
+}
+
+#[gpui::test]
+fn only_an_installed_app_offers_a_check_and_a_click_starts_one(cx: &mut TestAppContext) {
+    installed(cx);
+    assert!(check_button(cx).is_none(), "a dev build has no check");
+    // SAFETY: tests reading it want this unreachable server.
+    unsafe { std::env::set_var("ELY_UPDATE_MANIFEST", "http://127.0.0.1:9/none.json") };
+    cx.update(crate::updates::offer_for_tests);
+    let settings = cx.add_window(|window, cx| SettingsView::new(AppId::Mark, window, cx));
+    let mut shown = gpui::VisualTestContext::from_window(settings.into(), cx);
+    shown.run_until_parked();
+    let button = shown.debug_bounds("settings-check-now").expect("the check is offered");
+    shown.simulate_click(button.center(), gpui::Modifiers::default());
+    shown.run_until_parked();
+    let checked = shown.update(|_, cx| crate::updates::updater(cx).expect("installed").read(cx).checked.clone());
+    let Some(crate::updates::Checked::Failed(said)) = checked else {
+        panic!("the check ran and failed: {checked:?}");
+    };
+    assert!(said.starts_with("cannot fetch http://127.0.0.1:9/none.json"), "{said}");
 }

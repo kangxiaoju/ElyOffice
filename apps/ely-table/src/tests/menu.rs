@@ -9,7 +9,7 @@ use crate::menu::{Kind, Pick, What, held};
 type Shows = fn(&What) -> bool;
 
 /// The grid with the menu's host over it.
-struct Host(Entity<Book>);
+pub(super) struct Host(pub(super) Entity<Book>);
 
 impl gpui::Render for Host {
     fn render(&mut self, window: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> impl gpui::IntoElement {
@@ -20,19 +20,19 @@ impl gpui::Render for Host {
     }
 }
 
-fn frames(cx: &mut VisualTestContext) {
+pub(super) fn frames(cx: &mut VisualTestContext) {
     for _ in 0..3 {
         cx.update(|window, _| window.refresh());
         cx.run_until_parked();
     }
 }
 
-fn view(cx: &mut VisualTestContext, book: &Entity<Book>) -> Entity<LokView> {
+pub(super) fn view(cx: &mut VisualTestContext, book: &Entity<Book>) -> Entity<LokView> {
     cx.update(|_, app| book.read(app).active_tab().expect("a tab").view.clone())
 }
 
 /// A cell's middle or its header's, in window pixels.
-fn spot(cx: &mut VisualTestContext, book: &Entity<Book>, column: u32, row: u32, header: Option<bool>) -> Point<Pixels> {
+pub(super) fn spot(cx: &mut VisualTestContext, book: &Entity<Book>, column: u32, row: u32, header: Option<bool>) -> Point<Pixels> {
     frames(cx);
     let view = view(cx, book);
     cx.update(|_, app| {

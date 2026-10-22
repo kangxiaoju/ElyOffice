@@ -239,3 +239,19 @@ pub trait Commands: Host<Engine = Lok> {
 }
 
 impl<H: Host<Engine = Lok>> Commands for H {}
+
+/// A worker that shuts down when the test's thread ends.
+#[cfg(feature = "test-support")]
+pub fn test_worker(install: &Path, profile: &Path) -> Arc<Mutex<Worker>> {
+    let worker = Worker::spawn(install, profile).expect("the worker");
+    let worker = Arc::new(Mutex::new(worker));
+    let ending = worker.clone();
+    ely_ui::at_thread_end(move || match ending.lock() {
+        Ok(mut worker) => match worker.shutdown() {
+            Ok(()) => {}
+            Err(error) => log::warn!("lok: test worker shutdown failed: {error}"),
+        },
+        Err(_) => log::warn!("lok: a test panicked holding the worker"),
+    });
+    worker
+}

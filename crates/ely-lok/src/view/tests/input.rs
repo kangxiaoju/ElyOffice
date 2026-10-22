@@ -145,6 +145,8 @@ fn a_drag_selects_and_events_carry_the_cursor() {
     let (view, _) = cx.update(|app| live_view(app, &install));
     cx.update(|app| {
         view.update(app, |view, _| {
+            // The caret shows only inside the viewport.
+            view.viewport = (800.0, 600.0);
             let none = gpui::Modifiers::default();
             let y = px(view.geom.px_of(1500));
             view.mouse(0, point(px(view.geom.px_of(1500)), y), 1, 1, &none);

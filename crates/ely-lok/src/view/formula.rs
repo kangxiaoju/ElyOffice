@@ -95,7 +95,11 @@ impl LokView {
         if self.completion.pending() {
             return None;
         }
-        let cell = self.screen_rect(self.cell.cursor?);
+        let cell = self.cell.cursor?;
+        if !self.is_visible(cell) {
+            return None;
+        }
+        let cell = self.screen_rect(cell);
         let hint = if self.cell.functions.is_empty() {
             SignatureHelp::new("lok-view-usage", [usage(&self.cell.usage)?]).into_any_element()
         } else {

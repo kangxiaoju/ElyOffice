@@ -1,5 +1,3 @@
-mod fake;
-
 use base64::{Engine, engine::general_purpose::STANDARD};
 use ely_mail_engine::{
     Account, Auth, Cached, Error, Fetched, Key, Protocol, Secret, Security, Server, Store,

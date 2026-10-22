@@ -25,6 +25,17 @@ pub struct Reading {
     pub shown: Option<Shown>,
 }
 
+impl Reading {
+    /// The shown message's files, once its body is read.
+    pub fn files(&self, id: MessageId) -> Option<&[(String, Option<u64>)]> {
+        let Some(Shown { thread: Some(Ok(thread)), .. }) = &self.shown else {
+            return None;
+        };
+        let each = thread.letters.iter().find(|each| each.stored.id == id)?;
+        each.open.as_ref().ok()?.body().map(|body| body.files.as_slice())
+    }
+}
+
 pub struct Shown {
     /// The message picked in the list.
     pub id: MessageId,
@@ -115,6 +126,10 @@ pub fn words(cx: &gpui::App) -> Words {
 impl Mail {
     /// Reads the picked message's thread, or what changed in it.
     pub fn read_letter(&mut self, cx: &mut Context<Self>) {
+        if self.open == crate::boxes::Open::Drafts {
+            self.reading.shown = None;
+            return;
+        }
         let picked = self.listing.chosen.as_ref().map(|row| row.key.clone());
         let id = match picked.map(|key| key.parse::<i64>()) {
             Some(Ok(id)) => MessageId(id),

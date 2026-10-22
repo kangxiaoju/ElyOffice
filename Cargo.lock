@@ -290,7 +290,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -301,7 +301,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -342,6 +342,7 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "windows-sys 0.60.2",
+ "wl-clipboard-rs",
  "x11rb",
 ]
 
@@ -1867,7 +1868,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.3",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2000,7 +2001,7 @@ checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 
 [[package]]
 name = "ely-agent"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "ely-platform",
  "ely-ui",
@@ -2009,7 +2010,7 @@ dependencies = [
 
 [[package]]
 name = "ely-doc"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "csv",
@@ -2031,7 +2032,7 @@ dependencies = [
 
 [[package]]
 name = "ely-embed"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "ely-gpui-component",
  "ely-lok",
@@ -2042,7 +2043,7 @@ dependencies = [
 
 [[package]]
 name = "ely-files"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "aes-gcm",
  "dunce",
@@ -2059,7 +2060,7 @@ dependencies = [
 [[package]]
 name = "ely-gpui-component"
 version = "0.1.1"
-source = "git+https://github.com/ELY-Open-Source/Ely-GPUI-Components?rev=d05d8f0a638f8d013df84ff33601d10228d1e446#d05d8f0a638f8d013df84ff33601d10228d1e446"
+source = "git+https://github.com/ELY-Open-Source/Ely-GPUI-Components?rev=bcaf2ccaa00b4d364f519b7eb33d88c4638f7e66#bcaf2ccaa00b4d364f519b7eb33d88c4638f7e66"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -2100,19 +2101,21 @@ dependencies = [
  "usvg",
  "vte",
  "web-time",
+ "windows 0.62.2",
  "wry",
+ "zbus",
 ]
 
 [[package]]
 name = "ely-ipc"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "log",
 ]
 
 [[package]]
 name = "ely-lok"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "base64 0.23.1",
  "dunce",
@@ -2133,25 +2136,30 @@ dependencies = [
 
 [[package]]
 name = "ely-mail"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
+ "directories",
+ "ely-files",
  "ely-gpui-component",
  "ely-mail-engine",
+ "ely-mail-fake",
  "ely-platform",
  "ely-ui",
  "embed-resource",
  "gpui-pre",
  "jiff",
  "log",
+ "serde_json",
  "tempfile",
  "tokio",
 ]
 
 [[package]]
 name = "ely-mail-engine"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "base64 0.23.1",
+ "ely-mail-fake",
  "ely-platform",
  "form_urlencoded",
  "getrandom 0.4.3",
@@ -2163,8 +2171,9 @@ dependencies = [
  "mail-builder",
  "mail-parser",
  "mail-send",
+ "markdown",
+ "mime_guess",
  "nom 8.0.0",
- "rcgen",
  "rusqlite",
  "rustls",
  "rustls-platform-verifier",
@@ -2179,8 +2188,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ely-mail-fake"
+version = "0.1.10"
+dependencies = [
+ "base64 0.23.1",
+ "ely-mail-engine",
+ "rcgen",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
 name = "ely-mark"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -2205,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "ely-office"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "directories",
@@ -2226,7 +2246,7 @@ dependencies = [
 
 [[package]]
 name = "ely-pdf"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "dunce",
  "ely-files",
@@ -2244,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "ely-pdf-engine"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "cc",
  "ely-ipc",
@@ -2261,7 +2281,7 @@ dependencies = [
 
 [[package]]
 name = "ely-platform"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2301,7 +2321,7 @@ dependencies = [
 
 [[package]]
 name = "ely-show"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "ely-files",
  "ely-gpui-component",
@@ -2321,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "ely-table"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "ely-gpui-component",
  "ely-lok",
@@ -2338,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "ely-tree"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "dunce",
  "ely-files",
@@ -2358,7 +2378,7 @@ dependencies = [
 
 [[package]]
 name = "ely-ui"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "directories",
@@ -2373,6 +2393,7 @@ dependencies = [
  "semver",
  "serde_json",
  "tempfile",
+ "zbus",
 ]
 
 [[package]]
@@ -2517,7 +2538,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3135,6 +3156,7 @@ dependencies = [
  "gpui-pre-sum-tree",
  "gpui-pre-util",
  "gpui-pre-util-macros",
+ "hdrhistogram",
  "heapless",
  "image",
  "inventory",
@@ -3657,6 +3679,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
 dependencies = [
  "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "hdrhistogram"
+version = "7.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f49d1053f4708f0af3cf9fc5bffc7e68a914a3c45becb231c80068c9c3f78bea"
+dependencies = [
+ "byteorder",
+ "num-traits",
 ]
 
 [[package]]
@@ -4640,8 +4672,6 @@ checksum = "ccbc27cb02a58a311a404769a22f5abf63fe3173b290d80be7c534f9c7023151"
 [[package]]
 name = "mail-parser"
 version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ec00bda90c6e645a54506c630c2820cd6b1890cfd2b0a169b50f74b2b8c7c86"
 dependencies = [
  "encoding_rs",
  "hashify",
@@ -4838,7 +4868,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "536bfad37a309d62069485248eeaba1e8d9853aaf951caaeaed0585a95346f08"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5003,7 +5033,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5645,6 +5675,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "os_pipe"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
+dependencies = [
+ "libc",
+ "windows-sys 0.45.0",
+]
+
+[[package]]
 name = "owned_ttf_parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5738,6 +5778,17 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "petgraph"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
+dependencies = [
+ "fixedbitset",
+ "hashbrown 0.15.5",
+ "indexmap",
+]
 
 [[package]]
 name = "phf"
@@ -6839,7 +6890,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6907,7 +6958,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7458,7 +7509,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7516,7 +7567,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7878,7 +7929,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8230,6 +8281,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree_magic_mini"
+version = "3.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8765b90061cba6c22b5831f675da109ae5561588290f9fa2317adab2714d5a6"
+dependencies = [
+ "memchr",
+ "nom 8.0.0",
+ "petgraph",
+]
+
+[[package]]
 name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8264,7 +8326,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9084,7 +9146,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9717,6 +9779,24 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "wl-clipboard-rs"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d7888ccd4896447b2d14d3a9350a85df2aeb6f181e2e7a31349d104ac46cac1"
+dependencies = [
+ "libc",
+ "log",
+ "os_pipe",
+ "rustix",
+ "thiserror 2.0.21",
+ "tree_magic_mini",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
+]
 
 [[package]]
 name = "writeable"

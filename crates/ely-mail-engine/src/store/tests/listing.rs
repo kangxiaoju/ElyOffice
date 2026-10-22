@@ -179,3 +179,22 @@ fn unread_counts_by_mailbox() {
     assert_eq!((counts[&ann], counts[&bob]), (2, 1));
     assert!(!counts.contains_key(&archive));
 }
+
+#[test]
+fn arrived_is_unread_inbox_mail_stored_past_the_mark() {
+    let (_dir, mut store, [ann, archive, bob]) = two_accounts();
+    put(&mut store, ann, 1, &[], &mail("before", Some("Tue, 2 Jan 2024 10:00:00 +0000"), false));
+    let mark = store.newest().unwrap();
+    let recent = "Tue, 2 Jan 2024 10:00:00 +0000";
+    put(&mut store, ann, 2, &[], &mail("new", Some(recent), false));
+    put(&mut store, ann, 3, &["\\Seen"], &mail("read", Some(recent), false));
+    put(&mut store, ann, 4, &[], &mail("old date", Some("Mon, 1 Jan 2024 10:00:00 +0000"), false));
+    put(&mut store, ann, 5, &[], &mail("undated", None, false));
+    put(&mut store, archive, 1, &[], &mail("archived", Some(recent), false));
+    put(&mut store, bob, 1, &[], &mail("bob's", Some(recent), false));
+    let ann_account = store.accounts().unwrap()[0].0;
+    let arrived = store.arrived(ann_account, mark).unwrap();
+    let subjects: Vec<_> = arrived.into_iter().map(|each| each.subject.unwrap()).collect();
+    assert_eq!(subjects, ["new", "old date", "undated"], "its own date does not decide");
+    assert!(store.newest().unwrap().0 > mark.0);
+}

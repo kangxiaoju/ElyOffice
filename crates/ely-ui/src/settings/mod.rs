@@ -15,7 +15,7 @@ use gpui::{App, AsyncApp, Global, SharedString};
 use notify::{RecursiveMode, Watcher as _};
 use serde_json::Value;
 
-pub mod autosave;
+pub mod switches;
 mod diagnostics;
 mod frame;
 mod storage;
@@ -25,6 +25,7 @@ mod tests;
 mod window;
 
 pub use frame::{follow as follow_frame, restore as restored_frame};
+pub use storage::{AppStorage, add_rows as add_storage_rows};
 pub use window::open;
 
 const SETTLE: Duration = Duration::from_millis(150);
@@ -51,7 +52,7 @@ pub fn current(cx: &App) -> &Shared {
 pub fn install_defaults(cx: &mut App) {
     cx.set_global(Current { shared: Shared::default(), error: None, unsaved: BTreeMap::new(), app_error: BTreeMap::new() });
     panels::install_defaults(cx);
-    autosave::install_defaults(cx);
+    switches::install_defaults(cx);
 }
 
 /// Reads the shared file and follows later writes to it.
@@ -59,7 +60,7 @@ pub fn install(app: ely_platform::AppId, cx: &mut App) {
     let (shared, error) = read();
     cx.set_global(Current { shared, error, unsaved: BTreeMap::new(), app_error: BTreeMap::new() });
     panels::install(app, cx);
-    autosave::install(app, cx);
+    switches::install(app, cx);
     if let Err(error) = follow(cx) {
         log::error!("settings: changes from other apps are not followed: {error}");
     }
@@ -121,7 +122,6 @@ fn changed((shared, error): (Shared, Option<SharedString>), cx: &mut App) {
 pub(crate) const SHARED: &str = "shared";
 pub(crate) const PANELS: &str = "panels";
 pub(crate) const WINDOW: &str = "window";
-pub(crate) const AUTOSAVE: &str = "autosave";
 
 /// Records and shows how `kind`'s last save went.
 pub(crate) fn unsaved(kind: &'static str, failed: Option<SharedString>, cx: &mut App) {

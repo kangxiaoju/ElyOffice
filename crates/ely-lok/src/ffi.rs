@@ -73,6 +73,8 @@ impl Lok {
     pub const NO_TILED_ANNOTATIONS: u64 = 1 << 3;
     /// LOK_FEATURE_DOCUMENT_PASSWORD: the client answers.
     pub const DOCUMENT_PASSWORD: u64 = 1 << 0;
+    /// LOK_FEATURE_VIEWID_IN_VISCURSOR_INVALIDATION_CALLBACK.
+    pub const CURSOR_WITH_VIEW: u64 = 1 << 5;
 
     /// dlopens the LOK library and hooks with the profile URL.
     pub fn hook(install: &Path, profile_url: &str) -> io::Result<Self> {
@@ -93,8 +95,10 @@ impl Lok {
         let kit = unsafe { hook(install_c.as_ptr(), profile_c.as_ptr()) };
         if !kit.is_null() {
             type F = unsafe extern "C" fn(*mut Kit, u64);
-            let features =
-                Self::PART_IN_INVALIDATION | Self::NO_TILED_ANNOTATIONS | Self::DOCUMENT_PASSWORD;
+            let features = Self::PART_IN_INVALIDATION
+                | Self::NO_TILED_ANNOTATIONS
+                | Self::DOCUMENT_PASSWORD
+                | Self::CURSOR_WITH_VIEW;
             call!((*kit).class, 7, F, kit, features);
         }
         if kit.is_null() {

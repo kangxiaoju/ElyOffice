@@ -271,3 +271,29 @@ fn a_snippet_is_the_first_unquoted_words_on_one_line() {
     assert_eq!(page::plain("").snippet(80), "");
     assert_eq!(page::plain("日本語の本文").snippet(3), "日本語");
 }
+
+#[test]
+fn a_list_start_past_an_html_integer_counts_from_one() {
+    let list = |start: &str| {
+        let page = page::html(
+            &format!("<ol start={start}><li>one</li><li>two</li></ol>"),
+            &[],
+        );
+        page.text()
+    };
+    assert_eq!(list("18446744073709551615"), "1. one\n2. two");
+    assert_eq!(list("4294967295"), "4294967295. one\n4294967296. two");
+}
+
+#[test]
+fn words_stray_in_a_table_go_before_it() {
+    let page = page::html(
+        "<table><tr><td>cell</td></tr>stray</table><p>after</p>",
+        &[],
+    );
+    assert_eq!(
+        page.blocks,
+        [text("stray"), text("cell"), text("after")],
+        "as a browser places them"
+    );
+}

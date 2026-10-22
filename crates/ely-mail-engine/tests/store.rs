@@ -1,5 +1,3 @@
-mod fake;
-
 use std::path::Path;
 
 use ely_mail_engine::{Error, Fetched, Key, MailboxId, MessageId, Store};

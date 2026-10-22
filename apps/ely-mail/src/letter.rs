@@ -56,14 +56,14 @@ pub fn letter(stored: &Stored, kept: Kept, words: &Words) -> Result<Letter, Stri
         Kept::Original(raw) => {
             let mail = read(&raw)?;
             let headers = mail.headers.clone();
-            (Some(body(stored, mail, words)), headers)
+            (Some(body(&stored.missing, mail, words)), headers)
         }
         Kept::Head(head) => (None, read(&head)?.headers),
     };
     Ok(Letter { headers, body })
 }
 
-fn body(stored: &Stored, mail: ely_mail_engine::Mail, words: &Words) -> Body {
+pub fn body(missing: &[String], mail: ely_mail_engine::Mail, words: &Words) -> Body {
     let read = page::read(&mail.shown, &mail.inline);
     let snippet = read.snippet(SNIPPET);
     let mut held = Held {
@@ -82,7 +82,7 @@ fn body(stored: &Stored, mail: ely_mail_engine::Mail, words: &Words) -> Body {
                 .clone()
                 .unwrap_or_else(|| words.unnamed.to_string());
             let waiting = part.bytes.is_empty()
-                && (part.section.as_ref()).is_some_and(|at| stored.missing.contains(at));
+                && (part.section.as_ref()).is_some_and(|at| missing.contains(at));
             (name, (!waiting).then_some(part.bytes.len() as u64))
         })
         .collect();

@@ -21,12 +21,26 @@ use crate::{
     mail::{Mail, Parts},
 };
 
+mod contacts;
 mod controls;
+mod drafts;
+mod files;
 mod flows;
+mod leaving;
+mod migrate;
+mod organize;
+mod outbox;
 mod panes;
 mod reading;
+mod rules;
+mod notices;
+mod search;
+mod side;
+mod storage;
 mod syncs;
 mod threads;
+mod whole;
+mod writing;
 
 /// A credential store that keeps or refuses.
 #[derive(Clone, Default)]
@@ -107,11 +121,20 @@ pub(crate) fn window_with<'a>(
         store: Store::open(dir).map_err(|err| err.to_string()),
         vault: Vault::new(Box::new(keys)),
         tls,
+        copies: dir.join("opened"),
+        settings: dir.join("settings.json"),
+        open: std::sync::Arc::new(|path| {
+            OPENED.lock().unwrap().push(path.to_path_buf());
+            Ok(())
+        }),
     };
-    let (mail, cx) = cx.add_window_view(move |_, cx| Mail::new(parts, cx));
+    let (mail, cx) = cx.add_window_view(move |window, cx| Mail::new(parts, window, cx));
     settle(cx, |app| mail.read(app).accounts.is_some());
     (mail, cx)
 }
+
+/// Files the windows opened, in place of their apps.
+pub(crate) static OPENED: std::sync::Mutex<Vec<std::path::PathBuf>> = std::sync::Mutex::new(Vec::new());
 
 /// A port nothing listens on.
 pub(crate) fn closed_port() -> u16 {

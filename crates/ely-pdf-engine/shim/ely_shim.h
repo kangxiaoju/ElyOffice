@@ -30,6 +30,9 @@ typedef struct
 	fz_rect bbox;
 	int lines;
 	float gap;
+	/* Each line's first origin, as read. */
+	fz_point *at;
+	int count;
 } ely_shape;
 
 fz_matrix ely_to_user(fz_context *ctx, pdf_page *page);

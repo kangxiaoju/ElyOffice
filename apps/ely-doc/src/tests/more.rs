@@ -301,3 +301,25 @@ fn an_edit_after_a_save_raced_it_counts_again() {
     type_into(&mut cx, &docs, "b");
     settle(&cx, |app| docs.read(app).tab(id).is_some_and(|tab| tab.session.state() == ely_files::SaveState::Dirty));
 }
+
+#[test]
+fn the_side_panel_hides_and_review_brings_it_back() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let Some(docs) = docs(&mut cx, dir.path()) else {
+        eprintln!("SKIP: no LOK build");
+        return;
+    };
+    blank(&mut cx, &docs);
+    let shown = |cx: &mut TestAppContext| cx.update(|app| docs.update(app, |docs, cx| docs.side_view(cx).is_some()));
+    assert!(shown(&mut cx), "open at first");
+    with_window(&mut cx, &docs, |docs, window, cx| docs.on_side_panel(&crate::docs::ToggleSidePanel, window, cx));
+    assert!(!shown(&mut cx), "hidden");
+    with_window(&mut cx, &docs, |docs, window, cx| docs.on_show_review(&crate::review::ShowReview, window, cx));
+    assert!(shown(&mut cx), "review opens it");
+    assert_eq!(cx.update(|app| docs.read(app).side), crate::docs::Side::Review);
+    with_window(&mut cx, &docs, |docs, window, cx| docs.on_side_panel(&crate::docs::ToggleSidePanel, window, cx));
+    with_window(&mut cx, &docs, |docs, window, cx| docs.on_show_review(&crate::review::ShowReview, window, cx));
+    assert_eq!(cx.update(|app| docs.read(app).side), crate::docs::Side::Review, "a hidden review comes back as review");
+    assert!(shown(&mut cx));
+}

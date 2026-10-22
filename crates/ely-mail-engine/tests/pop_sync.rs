@@ -1,5 +1,3 @@
-mod fake;
-
 use std::sync::Mutex;
 
 use ely_mail_engine::{
@@ -20,12 +18,22 @@ fn opened(keep: bool) -> (tempfile::TempDir, Mutex<Store>, Account, AccountId) {
     (dir, Mutex::new(store), account, id)
 }
 
-/// A login, then `steps`.
 async fn run(
     store: &Mutex<Store>,
     account: &Account,
     id: AccountId,
     steps: Vec<fake::Step>,
+) -> Result<sync::Report, Error> {
+    stepped(store, account, id, steps, &|| {}).await
+}
+
+/// A login, then `steps`; `step` as the sync gives it.
+async fn stepped(
+    store: &Mutex<Store>,
+    account: &Account,
+    id: AccountId,
+    steps: Vec<fake::Step>,
+    step: &(dyn Fn() + Sync),
 ) -> Result<sync::Report, Error> {
     let certs = certs();
     let mut script = vec![
@@ -42,7 +50,7 @@ async fn run(
         ..account.clone()
     };
     let secret = Secret::Password("pw".into());
-    let done = sync::pop(&account, id, secret, &certs.trusted, store, NOW).await;
+    let done = sync::pop(&account, id, secret, &certs.trusted, store, NOW, step).await;
     if done.is_ok() {
         task.await.unwrap().unwrap();
     }
@@ -52,7 +60,10 @@ async fn run(
 fn subjects(store: &Mutex<Store>, id: AccountId) -> Vec<(String, String)> {
     let store = store.lock().unwrap();
     let [inbox] = store.folders(id).unwrap().try_into().unwrap();
-    assert_eq!((inbox.name.as_str(), inbox.role), ("INBOX", Some(Role::Inbox)));
+    assert_eq!(
+        (inbox.name.as_str(), inbox.role),
+        ("INBOX", Some(Role::Inbox))
+    );
     let mut out: Vec<_> = store
         .uidls(inbox.id)
         .unwrap()
@@ -187,8 +198,69 @@ async fn an_imap_account_is_refused() {
         ..account
     };
     let secret = Secret::Password("pw".into());
-    let error = sync::pop(&account, id, secret, &certs().trusted, &store, NOW)
+    let error = sync::pop(&account, id, secret, &certs().trusted, &store, NOW, &|| {})
         .await
         .unwrap_err();
     assert!(matches!(error, Error::Invalid(_)), "{error}");
+}
+
+#[tokio::test]
+async fn mail_deleted_here_does_not_come_down_again() {
+    let (_dir, store, account, id) = opened(true);
+    let mut first = vec![
+        expect("UIDL"),
+        send("+OK\n1 aa1\n.\n"),
+        expect("RETR 1"),
+        send("+OK\nSubject: One\n\nhi\n.\n"),
+    ];
+    first.extend(quit());
+    run(&store, &account, id, first).await.unwrap();
+    let inbox = store.lock().unwrap().folders(id).unwrap()[0].id;
+    let key = Key::Pop { uidl: "aa1".into() };
+    let one = store.lock().unwrap().find(inbox, &key).unwrap().unwrap();
+    let delete = ely_mail_engine::Change::Delete { erase: true };
+    store.lock().unwrap().change(&[one], delete).unwrap();
+    let mut again = vec![expect("UIDL"), send("+OK\n1 aa1\n.\n")];
+    again.extend(quit());
+    let report = run(&store, &account, id, again).await.unwrap();
+    assert_eq!(report.bodies, 0);
+    assert_eq!(store.lock().unwrap().find(inbox, &key).unwrap(), None);
+    // Once the server lets it go, so does the record.
+    let mut gone = vec![expect("UIDL"), send("+OK\n.\n")];
+    gone.extend(quit());
+    run(&store, &account, id, gone).await.unwrap();
+    assert!(store.lock().unwrap().uidls(inbox).unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn the_inbox_is_stored_before_the_mail_comes() {
+    let (_dir, store, account, id) = opened(true);
+    let mut steps = vec![
+        expect("UIDL"),
+        send(
+            "+OK
+1 aa1
+.
+",
+        ),
+        expect("RETR 1"),
+        send(
+            "+OK
+Subject: One
+
+hi
+.
+",
+        ),
+    ];
+    steps.extend(quit());
+    let seen = Mutex::new(Vec::new());
+    let step = || {
+        let store = store.lock().unwrap();
+        let folders = store.folders(id).unwrap().len();
+        let messages = store.synced(id).unwrap().messages;
+        seen.lock().unwrap().push((folders, messages));
+    };
+    stepped(&store, &account, id, steps, &step).await.unwrap();
+    assert_eq!(*seen.lock().unwrap(), [(1, 0)]);
 }

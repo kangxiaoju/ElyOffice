@@ -1,6 +1,5 @@
 #![cfg(windows)]
 
-mod fake;
 
 use std::{fs::File, os::windows::fs::OpenOptionsExt, path::Path};
 

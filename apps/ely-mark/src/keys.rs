@@ -79,6 +79,11 @@ pub fn menus(look: &crate::look::Look, cx: &App) -> Vec<Menu> {
                 Box::new(look::Typewriter),
                 look.typewriter,
             ),
+            checked(
+                "mark.look.line_numbers",
+                Box::new(look::LineNumbers),
+                look.line_numbers,
+            ),
             MenuItem::separator(),
             checked(
                 "mark.look.narrow",

@@ -60,8 +60,7 @@ impl Merge {
 
 impl Docs {
     pub fn on_merge(&mut self, _: &MailMerge, _: &mut Window, cx: &mut Context<Self>) {
-        self.side = Side::Merge;
-        cx.notify();
+        self.show_side(Side::Merge, cx);
         if self.merge.read(cx).table.is_none() {
             self.choose_csv(cx);
         }

@@ -1,6 +1,6 @@
 use std::{
     path::Path,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use ely_office::prelude::*;
@@ -24,7 +24,7 @@ mod turn;
 /// An unrendered Deck over a fresh worker, if LOK exists.
 pub(super) fn deck(cx: &mut TestAppContext, dir: &Path) -> Option<Entity<Deck>> {
     let install = ely_lok::install_dir().ok()?;
-    let worker = ely_lok::Worker::spawn(&install, &dir.join("profile")).expect("the worker");
+    let worker = ely_office::lok::test_worker(&install, &dir.join("profile"));
     let work = dir.join("work");
     std::fs::create_dir_all(&work).expect("the work dir");
     cx.update(ely_gpui_component::init_for_tests);
@@ -32,7 +32,6 @@ pub(super) fn deck(cx: &mut TestAppContext, dir: &Path) -> Option<Entity<Deck>> 
         ely_ui::settings::install_defaults(cx);
         ely_ui::i18n::install(cx);
     });
-    let worker = Arc::new(Mutex::new(worker));
     let window = cx.add_window(|_, _| gpui::Empty);
     let deck = cx
         .update_window(window.into(), |_, window, app| {

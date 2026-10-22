@@ -17,6 +17,8 @@ pub enum Error {
     Protocol(String),
     /// The server did not answer in time.
     Timeout(&'static str),
+    /// The message went out; its acceptance is unknown.
+    Unsure(String),
     /// An address or login the protocol cannot carry.
     Invalid(String),
     /// A message that cannot be read or written.
@@ -37,6 +39,12 @@ pub enum Error {
     SignInAgain(String),
     /// A remote picture did not come.
     Fetch(String),
+    /// The server lacks an extension the step needs.
+    Unsupported(&'static str),
+    /// Larger than the server takes, in bytes.
+    TooLarge { size: u64, limit: u64 },
+    /// Deleted here; a late download is not kept.
+    Deleted,
 }
 
 impl fmt::Display for Error {
@@ -48,6 +56,7 @@ impl fmt::Display for Error {
             Self::Server(text) => write!(f, "server refused: {text}"),
             Self::Protocol(text) => write!(f, "unreadable reply: {text}"),
             Self::Timeout(step) => write!(f, "no answer while {step}"),
+            Self::Unsure(text) => write!(f, "the server may have accepted it: {text}"),
             Self::Invalid(text) => write!(f, "cannot be sent: {text}"),
             Self::Mime(text) => write!(f, "unreadable message: {text}"),
             Self::Store(text) => write!(f, "local store failed: {text}"),
@@ -58,6 +67,11 @@ impl fmt::Display for Error {
             Self::SignIn(text) => write!(f, "sign-in failed: {text}"),
             Self::SignInAgain(text) => write!(f, "sign in again: {text}"),
             Self::Fetch(text) => write!(f, "picture not fetched: {text}"),
+            Self::Unsupported(name) => write!(f, "the server does not support {name}"),
+            Self::TooLarge { size, limit } => {
+                write!(f, "the message is {size} bytes; the server takes {limit}")
+            }
+            Self::Deleted => write!(f, "the message was deleted here"),
         }
     }
 }

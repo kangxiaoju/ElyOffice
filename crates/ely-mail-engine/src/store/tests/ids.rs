@@ -1,6 +1,6 @@
 //! Ids are never reused, so a stale one names nothing.
 
-use super::{STEPS, account, open};
+use super::{STEPS, account, held, open};
 use crate::{Fetched, Key, MessageId, Role, Store};
 
 const MAIL: &[u8] = b"From: a@example.com\r\nSubject: hi\r\n\r\nhi\r\n";
@@ -49,20 +49,20 @@ fn a_removed_account_folder_or_message_leaves_its_id_unused() {
 #[test]
 fn a_v3_store_keeps_its_ids_and_stops_reusing_them() {
     let dir = tempfile::tempdir().unwrap();
-    let mut old = open(dir.path(), &STEPS[..3]).unwrap();
+    let old = open(dir.path(), &STEPS[..3]).unwrap();
     let ann = old.add_account(&account("ann@example.com")).unwrap();
-    let [inbox] = old
-        .set_folders(ann, &[("INBOX", Some(Role::Inbox))])
-        .unwrap()
+    let [inbox] = super::old_folders(&old, ann, &[("INBOX", Some(Role::Inbox))])
         .try_into()
         .unwrap();
-    old.open_mailbox(inbox, 1).unwrap();
+    old.conn
+        .execute("UPDATE mailboxes SET uidvalidity = 1", [])
+        .unwrap();
     // Today's writes name later columns; insert as SQL.
     old.conn
         .execute(
             "INSERT INTO messages (mailbox, uidvalidity, uid, in_reply_to, refs, sender,
                  recipients, copies, content) VALUES (?1, 1, 1, '[]', '[]', '[]', '[]', '[]', ?2)",
-            rusqlite::params![inbox.0, "a".repeat(64)],
+            rusqlite::params![inbox.0, held(dir.path())],
         )
         .unwrap();
     let first = MessageId(old.conn.last_insert_rowid());
@@ -82,14 +82,14 @@ fn a_v3_store_keeps_its_ids_and_stops_reusing_them() {
 #[test]
 fn a_flagged_headers_only_v5_message_upgrades_and_stays_writable() {
     let dir = tempfile::tempdir().unwrap();
-    let mut old = open(dir.path(), &STEPS[..5]).unwrap();
+    let old = open(dir.path(), &STEPS[..5]).unwrap();
     let ann = old.add_account(&account("ann@example.com")).unwrap();
-    let [inbox] = old
-        .set_folders(ann, &[("INBOX", Some(Role::Inbox))])
-        .unwrap()
+    let [inbox] = super::old_folders(&old, ann, &[("INBOX", Some(Role::Inbox))])
         .try_into()
         .unwrap();
-    old.open_mailbox(inbox, 1).unwrap();
+    old.conn
+        .execute("UPDATE mailboxes SET uidvalidity = 1", [])
+        .unwrap();
     old.conn
         .execute(
             "INSERT INTO messages (mailbox, uidvalidity, uid, in_reply_to, refs, sender,

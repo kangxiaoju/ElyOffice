@@ -102,6 +102,11 @@ pub fn is_stale(error: &io::Error) -> bool {
     error.to_string().starts_with(ipc::STALE)
 }
 
+/// Whether `error` refused an undo or redo with no history.
+pub fn is_nothing(error: &io::Error) -> bool {
+    error.to_string().starts_with(ipc::NOTHING)
+}
+
 static SESSIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Worker {

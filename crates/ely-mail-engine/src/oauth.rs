@@ -78,7 +78,8 @@ fn outlook(client_id: String) -> Provider {
             "offline_access openid email profile",
         ]
         .join(" "),
-        extra: &[],
+        // Never reuse the browser's account silently.
+        extra: &[("prompt", "select_account")],
         // Port ignored only for localhost.
         redirect_host: "localhost",
     }
@@ -260,6 +261,7 @@ mod tests {
             assert!(scope.contains(&needed), "{needed}");
         }
         assert_eq!(value(&pairs, "access_type"), None);
+        assert_eq!(value(&pairs, "prompt"), Some("select_account"));
         assert!(
             value(&pairs, "redirect_uri")
                 .unwrap()

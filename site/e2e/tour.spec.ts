@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "./fixtures.ts";
 
-const APPS = ["ElyDoc", "ElyTable", "ElyShow", "ElyPDF", "ElyTree", "ElyMark"];
+const APPS = ["ElyDoc", "ElyTable", "ElyShow", "ElyPDF", "ElyMail", "ElyTree", "ElyMark"];
 
 let errors: string[] = [];
 
@@ -61,7 +61,7 @@ test("only the current app's clip loads and plays", async ({ page }) => {
   await at(page, 3);
   const clips = page.locator(".clip");
   await expect.poll(() => clips.nth(2).evaluate((v: HTMLVideoElement) => !v.paused && v.currentTime > 0)).toBe(true);
-  for (const i of [0, 1, 3, 4, 5]) await expect(clips.nth(i).locator("source")).toHaveCount(0);
+  for (const i of [0, 1, 3, 4, 5, 6]) await expect(clips.nth(i).locator("source")).toHaveCount(0);
   await at(page, 4);
   await expect(clips.nth(2).locator("source")).toHaveCount(0);
   await expect.poll(() => clips.nth(3).evaluate((v: HTMLVideoElement) => !v.paused)).toBe(true);
@@ -72,8 +72,8 @@ test("only the current app's clip loads and plays", async ({ page }) => {
 test("the rail scrolls to an app and marks it", async ({ page }) => {
   await page.goto("/");
   await at(page, 1);
-  await page.locator(".rail a").nth(4).click();
-  await expect(page.locator(".rail a").nth(4)).toHaveAttribute("aria-current", "step");
+  await page.locator(".rail a").nth(5).click();
+  await expect(page.locator(".rail a").nth(5)).toHaveAttribute("aria-current", "step");
   await expect(page.locator(".copy article.current h2")).toHaveText("ElyTree");
 });
 
@@ -100,7 +100,7 @@ test.describe("phone", () => {
 
   test("no sideways scroll; copy sits below the stage", async ({ page }) => {
     await page.goto("/");
-    for (const s of [0, 1, 2.5, 4, 6, 7]) {
+    for (const s of [0, 1, 2.5, 4, 6, 8]) {
       await at(page, s);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     }

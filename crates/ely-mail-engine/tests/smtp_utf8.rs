@@ -1,5 +1,3 @@
-mod fake;
-
 use ely_mail_engine::{Draft, Error, Mailbox, Part, build};
 use fake::smtp::{logged_in, transaction};
 
@@ -115,6 +113,7 @@ fn forwarded() -> Vec<u8> {
         },
         to: Vec::new(),
         cc: Vec::new(),
+        bcc: Vec::new(),
         subject: "fwd".into(),
         text: "see attached".into(),
         html: None,

@@ -24,8 +24,8 @@ pub(super) fn link(tx: &Transaction, id: MessageId, mail: &Mail) -> Result<()> {
 
 // Spam may name a real Message-ID; it joins no conversation.
 const SHARING: &str = "SELECT l.message FROM links l
-     JOIN messages m ON m.id = l.message JOIN mailboxes b ON b.id = m.mailbox
-     WHERE l.id = ?1 AND b.account = ?2 AND coalesce(b.role, '') NOT IN ('junk', 'trash')";
+     JOIN messages m ON m.id = l.message JOIN mailboxes b ON b.id = coalesce(m.moving, m.mailbox)
+     WHERE l.id = ?1 AND b.account = ?2 AND NOT m.erasing AND coalesce(b.role, '') NOT IN ('junk', 'trash')";
 
 impl Store {
     /// Linked messages in `id`'s account, oldest first, each Message-ID once.

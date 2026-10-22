@@ -6,6 +6,7 @@ use crate::{Part, Shown};
 
 mod build;
 mod plain;
+mod text;
 
 /// Quotes and lists deeper than this flatten.
 const NESTED: usize = 16;

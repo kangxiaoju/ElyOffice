@@ -291,6 +291,8 @@ fn the_range_names_the_folders_kept_whole() {
         name: name.into(),
         role: None,
         offline,
+        pinned: false,
+        local: false,
     };
     let cx = TestAppContext::single();
     cx.update(|app| {

@@ -12,6 +12,7 @@ case ${1:?app slug} in
     org.oasis-open.opendocument.presentation com.microsoft.powerpoint.ppt ;;
   ely-pdf) set -- Editor com.adobe.pdf ;;
   ely-mark) set -- Editor net.daringfireball.markdown ;;
+  ely-mail) set -- Viewer com.apple.mail.email ;;
   ely-tree) set -- Viewer public.folder ;;
   *) exit 0 ;;
 esac

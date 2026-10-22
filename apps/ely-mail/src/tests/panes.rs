@@ -21,7 +21,14 @@ fn message(subject: &str, date: &str) -> Vec<u8> {
     .into_bytes()
 }
 
-fn put(store: &mut Store, mailbox: MailboxId, uid: u32, flags: &[&str], subject: &str, day: u8) {
+pub(super) fn put(
+    store: &mut Store,
+    mailbox: MailboxId,
+    uid: u32,
+    flags: &[&str],
+    subject: &str,
+    day: u8,
+) {
     let key = Key::Imap {
         uidvalidity: 1,
         uid,
@@ -33,7 +40,7 @@ fn put(store: &mut Store, mailbox: MailboxId, uid: u32, flags: &[&str], subject:
 }
 
 /// Ann has an inbox and an archive, Bob an inbox.
-fn seeded(dir: &std::path::Path) -> (AccountId, MailboxId) {
+pub(super) fn seeded(dir: &std::path::Path) -> (AccountId, MailboxId) {
     let mut store = Store::open(dir).unwrap();
     let ann = store.add_account(&account("ann@example.com")).unwrap();
     let bob = store.add_account(&account("bob@example.com")).unwrap();
@@ -69,7 +76,7 @@ fn listed(mail: &Entity<Mail>, cx: &mut VisualTestContext) -> Option<Vec<String>
     })
 }
 
-fn shows(mail: &Entity<Mail>, cx: &mut VisualTestContext, subjects: &[&str]) {
+pub(super) fn shows(mail: &Entity<Mail>, cx: &mut VisualTestContext, subjects: &[&str]) {
     let want: Vec<String> = subjects.iter().map(|each| each.to_string()).collect();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     while listed(mail, cx).as_ref() != Some(&want) {

@@ -15,6 +15,7 @@ fn forward(mail: &Mail) -> Vec<u8> {
         },
         to: Vec::new(),
         cc: Vec::new(),
+        bcc: Vec::new(),
         subject: "fwd".into(),
         text: "see attached".into(),
         html: None,
@@ -140,4 +141,33 @@ fn a_forwarded_message_stays_unencoded() {
     };
     assert_eq!(inner.subject(), Some("old"));
     assert_eq!(inner.body_text(0).as_deref(), Some("您好"));
+}
+
+#[test]
+fn a_forwarded_file_without_a_name_goes_unnamed() {
+    let mail = read(&crlf(&[
+        "Content-Type: multipart/mixed; boundary=b",
+        "",
+        "--b",
+        "Content-Type: text/plain",
+        "",
+        "body",
+        "--b",
+        "Content-Type: application/pdf",
+        "Content-Disposition: attachment",
+        "Content-Transfer-Encoding: base64",
+        "",
+        "JVBERi0=",
+        "--b--",
+        "",
+    ]))
+    .unwrap();
+    assert_eq!(mail.attachments.len(), 1);
+    assert_eq!(mail.attachments[0].name, None);
+    let sent = forward(&mail);
+    let again = read(&sent).unwrap();
+    assert_eq!(again.attachments.len(), 1, "the file still goes");
+    assert_eq!(again.attachments[0].name, None);
+    assert_eq!(again.attachments[0].bytes, b"%PDF-");
+    assert_eq!(again.attachments[0].content_type, "application/pdf");
 }

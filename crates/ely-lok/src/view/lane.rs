@@ -123,6 +123,7 @@ impl LokView {
                         }
                         Ok(Some(Back::Shown(_) | Back::Completed(_))) => {}
                         Ok(None) => {}
+                        Err(error) if crate::is_nothing(&error) => log::info!("lok: nothing to undo or redo"),
                         Err(error) => {
                             log::error!("lok: input failed ({:?})", error.kind());
                             cx.emit(LokError(error.to_string()));

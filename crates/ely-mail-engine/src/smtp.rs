@@ -24,6 +24,8 @@ pub struct Smtp {
     utf8: bool,
     /// The server takes 8-bit bodies (8BITMIME).
     eight: bool,
+    /// RFC 1870: the largest message it takes.
+    limit: Option<u64>,
 }
 
 impl Smtp {
@@ -72,11 +74,21 @@ impl Smtp {
         log::info!("mail: SMTP login on {}", server.host);
         let utf8 = hello.has_capability(smtp_proto::EXT_SMTP_UTF8);
         let eight = hello.has_capability(smtp_proto::EXT_8BIT_MIME);
+        // SIZE 0 is no fixed limit.
+        let limit = match hello.has_capability(smtp_proto::EXT_SIZE) && hello.size > 0 {
+            true => Some(hello.size as u64),
+            false => None,
+        };
         Ok(Self {
             client,
             utf8,
             eight,
+            limit,
         })
+    }
+
+    pub fn limit(&self) -> Option<u64> {
+        self.limit
     }
 
     /// Hands one message to the server for these recipients.
@@ -86,6 +98,12 @@ impl Smtp {
         }
         for email in to.iter().map(String::as_str).chain([from]) {
             mailbox(email)?;
+        }
+        if let Some(limit) = self.limit
+            && message.len() as u64 > limit
+        {
+            let size = message.len() as u64;
+            return Err(Error::TooLarge { size, limit });
         }
         let data = data(message)?;
         let headers = crate::mime::utf8_headers(message)?;
@@ -110,26 +128,35 @@ impl Smtp {
             }
             params.add("SMTPUTF8");
         }
-        let sent = within("sending", async {
+        let handed = within("sending", async {
             self.client.mail_from(from, &params).await?;
             for to in to {
                 self.client.rcpt_to(to, &Parameters::new()).await?;
             }
             self.client.cmd(b"DATA\r\n").await?.assert_code(354)?;
             self.client.stream.write_all(&data).await?;
-            self.client.stream.flush().await?;
-            self.client.read().await?.assert_positive_completion()
+            Ok::<_, SendError>(())
         })
         .await?;
-        if let Err(SendError::UnexpectedReply(reply)) = sent {
-            // A refusal leaves the transaction open.
-            let words = format!("{} {}", reply.code(), reply.message());
-            return Err(match within("resetting", self.client.rset()).await? {
-                Ok(()) => Error::Server(words),
-                Err(err) => Error::Server(format!("{words}; RSET failed: {}", failed(err))),
-            });
+        match handed {
+            Err(SendError::UnexpectedReply(reply)) => return Err(refusal(reply)),
+            other => other.map_err(failed)?,
         }
-        sent.map_err(failed)?;
+        // The final dot may be out already.
+        match within("sending", self.client.stream.flush()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => return Err(Error::Unsure(err.to_string())),
+            Err(err) => return Err(Error::Unsure(err.to_string())),
+        }
+        // The message is out; a lost answer leaves it unknown.
+        let answer = match within("waiting for the server to accept", self.client.read()).await {
+            Ok(Ok(answer)) => answer,
+            Ok(Err(err)) => return Err(Error::Unsure(failed(err).to_string())),
+            Err(err) => return Err(Error::Unsure(err.to_string())),
+        };
+        if let Err(SendError::UnexpectedReply(reply)) = answer.assert_positive_completion() {
+            return Err(refusal(reply));
+        }
         log::info!("mail: SMTP accepted a message for {} recipients", to.len());
         Ok(())
     }
@@ -139,6 +166,11 @@ impl Smtp {
             .await?
             .map_err(failed)
     }
+}
+
+/// The transaction stays open; only QUIT follows.
+fn refusal(reply: smtp_proto::Response<String>) -> Error {
+    Error::Server(format!("{} {}", reply.code(), reply.message()))
 }
 
 fn smtp<T: tokio::io::AsyncRead + tokio::io::AsyncWrite>(stream: T) -> SmtpClient<T> {

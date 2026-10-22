@@ -49,6 +49,28 @@ impl Store {
         .collect()
     }
 
+    /// Accounts whose folders the side folds away.
+    pub fn folded(&self) -> Result<Vec<AccountId>> {
+        let mut query = self
+            .conn
+            .prepare("SELECT id FROM accounts WHERE folded = 1 ORDER BY id")?;
+        let rows = query.query_map([], |row| Ok(AccountId(row.get(0)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn set_folded(&self, account: AccountId, folded: bool) -> Result<()> {
+        self.writable()?;
+        let changed = self.conn.execute(
+            "UPDATE accounts SET folded = ?1 WHERE id = ?2",
+            params![folded, account.0],
+        )?;
+        if changed != 1 {
+            return Err(Error::Store(format!("no account {}", account.0)));
+        }
+        log::info!("mail: account {} folded: {folded}", account.0);
+        Ok(())
+    }
+
     pub fn cached(&self, account: AccountId) -> Result<Cached> {
         let messages: i64 = self.conn.query_row(
             "SELECT count(*) FROM messages JOIN mailboxes ON messages.mailbox = mailboxes.id

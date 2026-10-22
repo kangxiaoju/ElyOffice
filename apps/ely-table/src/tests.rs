@@ -1,7 +1,4 @@
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-};
+use std::path::Path;
 
 use ely_office::prelude::*;
 use gpui::{AppContext as _, Entity, TestAppContext, WindowHandle};
@@ -24,14 +21,13 @@ impl gpui::Render for Blank {
 /// An unrendered Book over a fresh worker, if LOK exists.
 fn book(cx: &mut TestAppContext, dir: &Path) -> Option<(WindowHandle<Blank>, Entity<Book>)> {
     let install = ely_lok::install_dir().ok()?;
-    let worker = ely_lok::Worker::spawn(&install, &dir.join("profile")).expect("the worker");
+    let worker = ely_office::lok::test_worker(&install, &dir.join("profile"));
     let work = dir.join("work");
     std::fs::create_dir_all(&work).expect("the work dir");
     cx.update(|cx| {
         ely_ui::settings::install_defaults(cx);
         ely_ui::i18n::install(cx);
     });
-    let worker = Arc::new(Mutex::new(worker));
     let window = cx.add_window(|_, _| Blank);
     let book = cx
         .update_window(window.into(), |_, window, app| {
@@ -396,8 +392,11 @@ fn a_delete_stays_with_its_workbook() {
 mod analysis;
 mod aids;
 mod data;
+mod edges;
 mod menu;
+mod merge;
 mod names;
 mod numbers;
 mod output;
 mod rules;
+mod undo;

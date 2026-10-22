@@ -15,6 +15,7 @@ mod recover;
 pub mod panel;
 mod save;
 mod stopped;
+mod undo;
 mod zoom;
 
 use std::{
@@ -43,11 +44,12 @@ pub use open::{Opening, Source};
 pub use recover::{Keeping, Recovering};
 pub use stopped::{Stopped, Stopping};
 pub use save::{Saving, folder};
+pub use undo::{Redo, Undo, Undoing, bind_undo_keys, undo_able, undo_items};
 pub use zoom::{ActualSize, ZoomIn, ZoomOut, Zooming, bind_zoom_keys, zoom_items};
 
 /// Every shared trait, for `use ely_office::prelude::*`.
 pub mod prelude {
-    pub use crate::{Chrome, Closing, Commands, Dialogs, Finding, Host, Opening, Saving, Stopping, Tabs, Zooming};
+    pub use crate::{Chrome, Closing, Commands, Dialogs, Finding, Host, Opening, Saving, Stopping, Tabs, Undoing, Zooming};
 }
 
 /// What one app opens and writes.

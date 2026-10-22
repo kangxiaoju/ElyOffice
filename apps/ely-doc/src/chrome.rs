@@ -96,7 +96,7 @@ impl Docs {
         let tab = shown.as_ref().map(|(view, doc)| (view, doc));
         self.props.update(cx, |props, cx| props.show(tab, cx));
         self.review.update(cx, |review, cx| review.show(tab, cx));
-        shown.as_ref()?;
+        shown.as_ref().filter(|_| self.siding)?;
         Some(match self.side {
             Side::Props => self.props.clone().into(),
             Side::Review => self.review.clone().into(),

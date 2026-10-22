@@ -13,10 +13,13 @@ getrandom.workspace = true
 html5ever.workspace = true
 imap-proto.workspace = true
 jiff.workspace = true
+tempfile.workspace = true
 log.workspace = true
 mail-builder.workspace = true
 mail-parser.workspace = true
 mail-send.workspace = true
+markdown.workspace = true
+mime_guess = "2"
 nom.workspace = true
 rustls.workspace = true
 rustls-platform-verifier.workspace = true
@@ -39,8 +42,7 @@ features = ["linux-native-sync-persistent"]
 
 [dev-dependencies]
 ely-platform.workspace = true
-rcgen.workspace = true
-tempfile.workspace = true
+fake = { package = "ely-mail-fake", path = "../ely-mail-fake" }
 
 [lints]
 workspace = true

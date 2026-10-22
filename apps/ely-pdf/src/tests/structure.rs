@@ -4,7 +4,7 @@ use ely_pdf_engine::{
     Worker,
     sample::{Extras, pdf, pdf_with, scan},
 };
-use gpui::{Entity, Modifiers, MouseButton, TestAppContext, VisualTestContext};
+use gpui::{Entity, Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px};
 
 use super::input::over;
 use super::{frames, settle, shown, windowed};
@@ -103,6 +103,34 @@ fn bookmarks_add_after_the_pick_rename_and_delete() {
     cx.update(|_, app| viewer.update(app, |viewer, cx| viewer.delete_bookmark(cx)));
     landed(cx, &view, 3);
     assert_eq!(titles(cx), ["First"]);
+}
+
+#[test]
+fn a_long_bookmark_list_scrolls_to_its_last_mark() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let path = dir.path().join("long.pdf");
+    let titles: Vec<String> = (0..100).map(|n| format!("Chapter {n}")).collect();
+    let marks: Vec<_> = titles.iter().map(|title| (title.as_str(), 0, &[][..])).collect();
+    std::fs::write(&path, pdf(&[(612.0, 792.0, &["one"])], &marks)).expect("writes");
+    let (viewer, cx) = windowed(&mut cx, dir.path(), &[path], true);
+    let view = shown(cx, &viewer);
+    settle(cx, |app| view.read(app).marks.len() == 100);
+    cx.update(|_, app| viewer.read(app).side.clone()).update(cx, |side, cx| {
+        side.pane = crate::side::Pane::Marks;
+        cx.notify();
+    });
+    frames(cx);
+    let before = cx.debug_bounds("pdf-marks").expect("the bookmarks are drawn");
+    let window = cx.update(|window, _| window.viewport_size());
+    assert!(before.bottom() > window.height, "the list is longer than the window");
+    let at = point(before.left() + px(20.0), px(300.0));
+    for _ in 0..20 {
+        cx.simulate_event(ScrollWheelEvent { position: at, delta: ScrollDelta::Pixels(point(px(0.0), px(-1000.0))), ..Default::default() });
+        frames(cx);
+    }
+    let after = cx.debug_bounds("pdf-marks").expect("the bookmarks are drawn");
+    assert!(after.bottom() <= window.height, "the last mark is in view: {after:?}");
 }
 
 #[test]

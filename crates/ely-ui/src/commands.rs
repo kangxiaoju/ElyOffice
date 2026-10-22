@@ -44,7 +44,7 @@ pub fn bind_quit(cx: &mut App) {
 }
 
 /// Quits through the main window's route, if one is set.
-pub(crate) fn quit(cx: &mut App) {
+pub fn quit(cx: &mut App) {
     match cx.try_global::<QuitRoute>().map(|route| Rc::clone(&route.0)) {
         Some(route) => route(cx),
         None => cx.quit(),

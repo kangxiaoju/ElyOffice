@@ -1,5 +1,3 @@
-mod fake;
-
 use std::sync::Mutex;
 
 use ely_mail_engine::{
@@ -57,7 +55,7 @@ async fn run(
 ) -> Result<sync::Report, Error> {
     let (account, task, certs) = server(steps).await;
     let secret = Secret::Password("pw".into());
-    let done = sync::imap(&account, id, secret, &certs.trusted, store, NOW).await;
+    let done = sync::imap(&account, id, secret, &certs.trusted, store, NOW, &|| {}).await;
     if done.is_ok() {
         task.await.unwrap().unwrap();
     }
@@ -119,7 +117,8 @@ async fn a_first_sync_takes_headers_and_recent_bodies() {
             headers: 1,
             bodies: 1,
             removed: 0,
-            deleted: 0
+            deleted: 0,
+            pushed: Default::default(),
         }
     );
     let store = store.lock().unwrap();
@@ -444,4 +443,35 @@ async fn an_offline_folder_takes_every_message_whole() {
     let old = store.find(mailbox, &key(7, 1)).unwrap().unwrap();
     let bytes = store.original(old).unwrap().unwrap();
     assert!(String::from_utf8(bytes).unwrap().ends_with("kept\r\n"));
+}
+
+#[tokio::test]
+async fn each_step_finds_the_folders_and_the_mail_so_far() {
+    let (_dir, store, id) = opened();
+    let (account, task, certs) = server(first_sync()).await;
+    let seen = Mutex::new(Vec::new());
+    let step = || {
+        let store = store.lock().unwrap();
+        let folders = store.folders(id).unwrap().len();
+        let messages = store.synced(id).unwrap().messages;
+        seen.lock().unwrap().push((folders, messages));
+    };
+    let secret = Secret::Password("pw".into());
+    sync::imap(&account, id, secret, &certs.trusted, &store, NOW, &step)
+        .await
+        .unwrap();
+    task.await.unwrap().unwrap();
+    assert_eq!(*seen.lock().unwrap(), [(2, 0), (2, 2), (2, 2)]);
+}
+
+#[tokio::test]
+async fn mail_trimmed_for_the_cap_stays_headers_only() {
+    let (_dir, store, id) = opened();
+    run(&store, id, first_sync()).await.unwrap();
+    assert_eq!(store.lock().unwrap().trim_downloads(0, || true).unwrap(), 1);
+    // The recent message is trimmed: no body is asked for.
+    run(&store, id, inbox_of_two()).await.unwrap();
+    let store = store.lock().unwrap();
+    let recent = store.find(inbox(&store, id), &key(7, 2)).unwrap().unwrap();
+    assert!(!store.get(recent).unwrap().body);
 }

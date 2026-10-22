@@ -3,12 +3,13 @@
 use ely_gpui_component::{
     layout::ScrollArea,
     mail::{Mailbox, MailboxList},
+    menus::{ContextMenu, Menu, MenuItem},
     primitives::IconName,
 };
-use ely_mail_engine::{LocalFolder, Role};
+use ely_mail_engine::{AccountId, LocalFolder, MailboxId, Role};
 use gpui::{
-    App, Context, IntoElement, ParentElement as _, Render, SharedString, Styled as _, WeakEntity,
-    Window, div,
+    App, Context, IntoElement, ParentElement as _, Pixels, Point, Render, SharedString,
+    Styled as _, WeakEntity, Window, div,
 };
 
 use crate::{
@@ -16,13 +17,85 @@ use crate::{
     mail::{Mail, text},
 };
 
+/// A folder's menu, numbered so each opens once.
+struct Asked {
+    request: (u64, Point<Pixels>),
+    account: AccountId,
+    mailbox: MailboxId,
+    pinned: bool,
+    local: bool,
+    name: SharedString,
+}
+
 pub struct Side {
     mail: WeakEntity<Mail>,
+    asked: Option<Asked>,
 }
 
 impl Side {
     pub fn new(mail: WeakEntity<Mail>) -> Self {
-        Self { mail }
+        Self { mail, asked: None }
+    }
+
+    /// A folder's pin menu, where the right press fell.
+    fn ask(&mut self, key: &SharedString, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some(mail) = self.mail.upgrade() else {
+            return;
+        };
+        let mail = mail.read(cx);
+        let Some(Open::Mailbox(account, mailbox)) = mail.opened(key) else {
+            return log::info!("mail: no menu for a box that is no folder");
+        };
+        let folders = mail
+            .syncs
+            .get(&account)
+            .map_or(&[][..], |each| &each.folders);
+        let Some(folder) = folders.iter().find(|folder| folder.id == mailbox) else {
+            return log::error!("mail: a menu for a folder not listed");
+        };
+        let number = self.asked.as_ref().map_or(1, |asked| asked.request.0 + 1);
+        self.asked = Some(Asked {
+            request: (number, at),
+            account,
+            mailbox,
+            pinned: folder.pinned,
+            local: folder.local,
+            name: folder_name(folder, cx),
+        });
+        cx.notify();
+    }
+
+    fn menu(&self, cx: &App) -> Option<(Menu, (u64, Point<Pixels>))> {
+        let asked = self.asked.as_ref()?;
+        let (account, mailbox, pinned) = (asked.account, asked.mailbox, asked.pinned);
+        let (key, icon) = match pinned {
+            true => ("mail.boxes.unpin", IconName::PinOff),
+            false => ("mail.boxes.pin", IconName::Pin),
+        };
+        let this = self.mail.clone();
+        let item = MenuItem::new(text(cx, key, &[]))
+            .icon(icon)
+            .on_click(move |_, cx| {
+                this.update(cx, |mail, cx| mail.pin(account, mailbox, !pinned, cx))
+                    .ok();
+            });
+        let (this, name) = (self.mail.clone(), asked.name.clone());
+        let export = MenuItem::new(text(cx, "mail.mbox.export", &[]))
+            .icon(IconName::Upload)
+            .on_click(move |_, cx| {
+                this.update(cx, |mail, cx| mail.export_mbox(mailbox, &name, cx)).ok();
+            });
+        let mut menu = Menu::new().item(item).item(export);
+        if asked.local {
+            let (this, name) = (self.mail.clone(), asked.name.clone());
+            let remove = MenuItem::new(text(cx, "mail.mbox.remove", &[]))
+                .icon(IconName::Trash2)
+                .on_click(move |_, cx| {
+                    this.update(cx, |mail, cx| mail.ask_remove_imported(account, mailbox, name.clone(), cx)).ok();
+                });
+            menu = menu.item(remove);
+        }
+        Some((menu, asked.request))
     }
 }
 
@@ -38,46 +111,114 @@ impl Render for Side {
             IconName::Inbox,
         )
         .unread(mail.inboxes_unread());
-        let mut list =
-            MailboxList::new("mail-boxes").section(text(cx, "mail.boxes.unified", &[]), [inboxes]);
+        let drafts = Mailbox::new(
+            Open::Drafts.key(),
+            text(cx, "mail.boxes.drafts", &[]),
+            IconName::File,
+        );
+        let outbox = Mailbox::new(
+            Open::Outbox.key(),
+            text(cx, "mail.boxes.outbox", &[]),
+            IconName::Send,
+        )
+        .unread(mail.pending as u32);
+        let contacts = Mailbox::new(
+            Open::Contacts.key(),
+            text(cx, "mail.boxes.contacts", &[]),
+            IconName::Users,
+        );
+        let box_of = |id: AccountId, folder: &LocalFolder, name: SharedString| {
+            let open = Open::Mailbox(id, folder.id);
+            // Boxes with nothing unread are absent.
+            let unread = mail.unread.get(&folder.id).copied().unwrap_or(0);
+            let icon = match folder.local {
+                true => IconName::HardDrive,
+                false => icon(folder.role),
+            };
+            Mailbox::new(open.key(), name, icon).unread(unread)
+        };
+        let named = mail.accounts().len() > 1;
+        let mut pinned = Vec::new();
+        let mut accounts = Vec::new();
         for (id, account) in mail.accounts() {
             let folders = mail.syncs.get(id).map_or(&[][..], |each| &each.folders);
             let mut sorted: Vec<&LocalFolder> = folders.iter().collect();
             sorted.sort_by(|a, b| rank(a.role).cmp(&rank(b.role)).then(a.name.cmp(&b.name)));
-            let boxes = sorted.into_iter().map(|folder| {
-                let open = Open::Mailbox(*id, folder.id);
-                // Boxes with nothing unread are absent.
-                let unread = mail.unread.get(&folder.id).copied().unwrap_or(0);
-                Mailbox::new(open.key(), name(folder, cx), icon(folder.role)).unread(unread)
-            });
-            let settings = Mailbox::new(
+            let mut boxes = Vec::new();
+            for folder in sorted {
+                let name = folder_name(folder, cx);
+                match folder.pinned {
+                    // Pinned: at the top, by its account's name.
+                    true if named => {
+                        let name = format!("{name} · {}", account.address);
+                        pinned.push(box_of(*id, folder, name.into()));
+                    }
+                    true => pinned.push(box_of(*id, folder, name)),
+                    false => boxes.push(box_of(*id, folder, name)),
+                }
+            }
+            boxes.push(Mailbox::new(
                 Open::Account(*id).key(),
                 text(cx, "mail.boxes.settings", &[]),
                 IconName::Settings,
-            );
-            list = list.section(account.address.clone(), boxes.chain([settings]));
+            ));
+            accounts.push((account.address.clone(), boxes));
         }
-        let this = self.mail.clone();
-        let list = list.open(mail.open.key()).on_open(move |key, _, cx| {
-            this.update(cx, |mail, cx| match mail.opened(key) {
-                Some(open) => mail.open_box(open, cx),
-                None => log::error!("mail: the mailbox list sent an unknown box"),
+        let folded = mail
+            .accounts()
+            .iter()
+            .filter(|(id, _)| mail.folded.contains(id));
+        let folded: Vec<String> = folded.map(|(_, account)| account.address.clone()).collect();
+        let mut list = MailboxList::new("mail-boxes").fixed_section(
+            text(cx, "mail.boxes.unified", &[]),
+            [inboxes, drafts, outbox, contacts].into_iter().chain(pinned),
+        );
+        for (address, boxes) in accounts {
+            list = list.section(address, boxes);
+        }
+        let (this, folding, side) = (self.mail.clone(), self.mail.clone(), cx.weak_entity());
+        let list = list
+            .open(mail.open.key())
+            .folded(folded)
+            .on_open(move |key, _, cx| {
+                this.update(cx, |mail, cx| match mail.opened(key) {
+                    Some(open) => mail.open_box(open, cx),
+                    None => log::error!("mail: the mailbox list sent an unknown box"),
+                })
+                .ok();
             })
-            .ok();
-        });
-        ScrollArea::new("mail-side-scroll")
+            .on_fold(move |title, folded, _, cx| {
+                folding
+                    .update(cx, |mail, cx| mail.fold(title, folded, cx))
+                    .ok();
+            })
+            .on_menu(move |key, at, _, cx| {
+                side.update(cx, |side, cx| side.ask(key, at, cx)).ok();
+            });
+        let scroll = ScrollArea::new("mail-side-scroll")
             .vertical()
             .size_full()
-            .child(div().p_2().child(list))
+            .child(div().p_2().child(list));
+        // The host stays, so the list's focus survives the menu.
+        let (menu, request) = match self.menu(cx) {
+            Some((menu, request)) => (menu, Some(request)),
+            None => (Menu::new(), None),
+        };
+        ContextMenu::new("mail-side-menu", menu)
+            .manual(request)
+            .size_full()
+            .child(scroll)
             .into_any_element()
     }
 }
 
 impl Mail {
     /// The box a side key names, if still here.
-    fn opened(&self, key: &SharedString) -> Option<Open> {
-        if *key == Open::Inboxes.key() {
-            return Some(Open::Inboxes);
+    pub(crate) fn opened(&self, key: &SharedString) -> Option<Open> {
+        for open in [Open::Inboxes, Open::Drafts, Open::Outbox, Open::Contacts] {
+            if *key == open.key() {
+                return Some(open);
+            }
         }
         self.accounts().iter().find_map(|(id, _)| {
             let folders = self.syncs.get(id).map_or(&[][..], |each| &each.folders);
@@ -87,11 +228,50 @@ impl Mail {
                 .find(|open| open.key() == *key)
         })
     }
+
+    /// Folds an account's section, by its address.
+    fn fold(&mut self, address: &str, folded: bool, cx: &mut Context<Self>) {
+        let found = self
+            .accounts()
+            .iter()
+            .find(|(_, each)| each.address == address);
+        let Some((id, _)) = found else {
+            return log::error!("mail: the side folded a section that is no account");
+        };
+        let id = *id;
+        self.with_store(
+            cx,
+            move |store| store.set_folded(id, folded),
+            move |mail, done, cx| match done {
+                Ok(()) if folded => _ = mail.folded.insert(id),
+                Ok(()) => _ = mail.folded.remove(&id),
+                Err(error) => mail.failed("mail.boxes.unsaved", &error, cx),
+            },
+        );
+    }
+
+    fn pin(
+        &mut self,
+        account: AccountId,
+        mailbox: MailboxId,
+        pinned: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.with_store(
+            cx,
+            move |store| store.set_pinned(mailbox, pinned),
+            move |mail, done, cx| match done {
+                Ok(()) => mail.read_synced(account, cx),
+                Err(error) => mail.failed("mail.boxes.unsaved", &error, cx),
+            },
+        );
+    }
 }
 
 /// Inbox in the reader's words; others as named.
-fn name(folder: &LocalFolder, cx: &App) -> SharedString {
+pub fn folder_name(folder: &LocalFolder, cx: &App) -> SharedString {
     match folder.role {
+        _ if folder.local => text(cx, "mail.boxes.imported", &[("name", &folder.name)]),
         Some(Role::Inbox) => text(cx, "mail.boxes.inbox", &[]),
         _ => folder.name.clone().into(),
     }

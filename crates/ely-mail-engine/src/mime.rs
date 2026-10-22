@@ -35,6 +35,8 @@ pub struct Part {
 pub struct Mail {
     pub subject: Option<String>,
     pub from: Vec<Mailbox>,
+    /// Where answers go instead of From.
+    pub reply_to: Vec<Mailbox>,
     pub to: Vec<Mailbox>,
     pub cc: Vec<Mailbox>,
     /// Seconds since the Unix epoch.
@@ -59,12 +61,14 @@ pub enum Shown {
     Html(String),
 }
 
-/// A message to write; Bcc stays in the SMTP envelope.
+/// A message to write; sent Bcc stays in the envelope.
 #[derive(Clone, Debug)]
 pub struct Draft {
     pub from: Mailbox,
     pub to: Vec<Mailbox>,
     pub cc: Vec<Mailbox>,
+    /// Written as a header: for draft copies only.
+    pub bcc: Vec<Mailbox>,
     pub subject: String,
     pub text: String,
     pub html: Option<String>,
@@ -102,6 +106,7 @@ pub fn read(raw: &[u8]) -> Result<Mail> {
     Ok(Mail {
         subject: message.subject().map(str::to_owned),
         from: mailboxes(message.from().into_iter()),
+        reply_to: mailboxes(message.reply_to().into_iter()),
         to: mailboxes(message.all_to()),
         cc: mailboxes(message.all_cc()),
         date: message.date().map(|date| date.to_timestamp()),
@@ -129,6 +134,7 @@ pub(crate) fn utf8_headers(raw: &[u8]) -> Result<bool> {
 
 pub fn build(draft: &Draft) -> Result<Built> {
     let people = [&draft.from].into_iter().chain(&draft.to).chain(&draft.cc);
+    let people = people.chain(&draft.bcc);
     for person in people {
         mailbox(&person.email)?;
         line("a name", person.name.as_deref().unwrap_or_default())?;
@@ -150,6 +156,9 @@ pub fn build(draft: &Draft) -> Result<Built> {
     if !draft.cc.is_empty() {
         builder = builder.cc(Out::new_list(draft.cc.iter().map(address).collect()));
     }
+    if !draft.bcc.is_empty() {
+        builder = builder.bcc(Out::new_list(draft.bcc.iter().map(address).collect()));
+    }
     if let Some(id) = &draft.in_reply_to {
         builder = builder.in_reply_to(id.as_str());
     }
@@ -161,6 +170,31 @@ pub fn build(draft: &Draft) -> Result<Built> {
         .write_to_vec()
         .map_err(|err| Error::Mime(err.to_string()))?;
     Ok(Built { message_id, bytes })
+}
+
+/// The sent form: the top header block loses Bcc.
+pub fn without_bcc(raw: &[u8]) -> Result<Vec<u8>> {
+    let end = raw
+        .windows(4)
+        .position(|end| end == b"\r\n\r\n")
+        .ok_or_else(|| Error::Mime("the message has no header end".into()))?;
+    let (head, body) = raw.split_at(end + 2);
+    let mut out = Vec::with_capacity(raw.len());
+    let mut dropping = false;
+    for line in head.split_inclusive(|byte| *byte == b'\n') {
+        // RFC 5322 §2.2.3: a fold starts with a space.
+        if !line.starts_with(b" ") && !line.starts_with(b"\t") {
+            let mut name = line.split(|byte| *byte == b':');
+            dropping = name
+                .next()
+                .is_some_and(|it| it.eq_ignore_ascii_case(b"Bcc"));
+        }
+        if !dropping {
+            out.extend_from_slice(line);
+        }
+    }
+    out.extend_from_slice(body);
+    Ok(out)
 }
 
 /// Mixed of the alternative bodies and the attachments.
@@ -184,11 +218,9 @@ fn body(draft: &Draft) -> Result<MimePart<'_>> {
 }
 
 fn attachment(part: &Part) -> Result<MimePart<'_>> {
-    let name = part
-        .name
-        .as_deref()
-        .ok_or_else(|| Error::Invalid("an attachment needs a file name".into()))?;
-    line("a file name", name)?;
+    if let Some(name) = &part.name {
+        line("a file name", name)?;
+    }
     line("a content type", &part.content_type)?;
     let mut kind = ContentType::new(part.content_type.as_str());
     for (key, value) in &part.params {
@@ -206,8 +238,12 @@ fn attachment(part: &Part) -> Result<MimePart<'_>> {
         MimePart::new(kind, body).transfer_encoding(encoding)
     } else {
         MimePart::new(kind, part.bytes.as_slice())
-    }
-    .attachment(name);
+    };
+    attachment = match &part.name {
+        Some(name) => attachment.attachment(name.as_str()),
+        // RFC 2183 §2.3: a name is optional.
+        None => attachment.header("Content-Disposition", ContentType::new("attachment")),
+    };
     if let Some(id) = &part.content_id {
         line("a content ID", id)?;
         attachment = attachment.cid(id.as_str());

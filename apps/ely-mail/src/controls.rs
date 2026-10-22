@@ -57,12 +57,13 @@ impl Mail {
         if protocol != Protocol::Imap {
             return None;
         }
-        let folders = &self.syncs.get(&id)?.folders;
+        // Imported folders have no server to sync.
+        let folders: Vec<_> = self.syncs.get(&id)?.folders.iter().filter(|folder| !folder.local).collect();
         if folders.is_empty() {
             return None;
         }
         let this = cx.weak_entity();
-        let switches = folders.iter().map(|folder| {
+        let switches = folders.into_iter().map(|folder| {
             let mailbox = folder.id;
             let this = this.clone();
             let label = text(cx, "mail.sync.offline", &[("name", &folder.name)]);

@@ -2,7 +2,7 @@
 
 随发行说明发布，每个版本一份。支持某格式不等于支持它的全部功能；下表只写已验证的内容、已知限制与保存行为。
 
-版本：Ely Office 0.1.9（首版六个应用：ElyDoc、ElyTable、ElyShow、ElyPDF、ElyTree、ElyMark）。日期 2026-10-20。
+版本：Ely Office 0.1.10（首批七个应用：ElyDoc、ElyTable、ElyShow、ElyPDF、ElyTree、ElyMark、ElyMail）。日期 2026-10-21。
 内核：LibreOffice 26.2.6.3（8221e31，加 `patches/libreoffice` 0001–0053）；MuPDF 1.28.5（8ad45e9，加 `patches/mupdf` 0001–0005）；Git 2.56.0（a018953）与 git-lfs 3.8.0。
 验证机：macOS 27.0 arm64。Windows 与 Linux 未验证。本机没有 Microsoft Office：与 Office 的交叉检查未做（待做）。
 
@@ -73,6 +73,15 @@
 | 公式 | `$…$`、`$$…$$` 与 `\(…\)`、`\[…\]`，经 RaTeX 排版（行内与块） |
 | 输出 | HTML（自包含或带资源文件夹）、PDF、纯文本、富文本复制、打印 |
 
+## ElyMail
+
+| | 格式 |
+| --- | --- |
+| 协议 | IMAP4rev1（有 UIDPLUS、MOVE、SPECIAL-USE、LIST-EXTENDED 即用）、POP3、SMTP（8BITMIME、SMTPUTF8、SIZE）；Gmail、Microsoft 走 OAuth，iCloud 走应用专用密码 |
+| 读 | MIME（嵌套至多 64 层）；纯文本与 HTML 按块的安全子集画出，CSS 不读，SVG 图片不显示；`.eml` 只读查看 |
+| 导入或受限 | MBOX（mboxrd）导入为本机文件夹，只在本机；vCard 2.1、3.0、4.0（UTF-8）；只报 IMAP4rev2 的服务器读不通 |
+| 输出 | 写信发纯文本，或纯文本加 HTML；MBOX（mboxrd，只写完整的邮件：缺附件、原始二进制、末尾无换行的不导出）、EML、vCard 3.0 |
+
 ## 第二批
 
-ElyMail 与 ElyAgent 不在首版，验证随第二批补上。
+ElyAgent 不在首批，验证随第二批补上。

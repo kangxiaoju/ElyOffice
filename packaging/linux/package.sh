@@ -19,12 +19,7 @@ row=$(awk -F'\t' -v slug="$slug" '$1 == slug { print $2 "\t" $3 }' "$root/packag
 name=${row%%$'\t'*}
 categories=${row##*$'\t'}
 # Ely is MIT; bundled engines keep their licences.
-case $slug in
-  ely-doc | ely-table | ely-show) license="MIT AND MPL-2.0" ;;
-  ely-pdf) license="MIT AND AGPL-3.0-or-later" ;;
-  ely-tree) license="MIT AND GPL-2.0-only" ;;
-  *) license=MIT ;;
-esac
+license=$(awk -F'\t' -v slug="$slug" '$1 == slug { print $5 }' "$root/packaging/apps.tsv")
 # The types it opens, from packaging/types.tsv; none drops the line.
 mimes=$(awk -F'\t' -v slug="$slug" '$1 == slug && !seen[$3]++ { printf "%s;", $3 }' "$root/packaging/types.tsv")
 desktop_entry() {
@@ -123,6 +118,7 @@ version=$(awk -F'"' '/^version = / { print $2; exit }' "$root/Cargo.toml")
 out=$dist/$name-$version-linux-$arch.AppImage
 ARCH=$arch "$pack" --appimage-extract-and-run --runtime-file "$runtime" "$appdir" "$out"
 echo "$out"
+"$root/packaging/manifest.sh" "$slug" "linux-$arch" "$out"
 
 # Libraries the AppDir needs and does not bundle.
 broken() {

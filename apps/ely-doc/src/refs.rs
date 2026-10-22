@@ -233,7 +233,7 @@ impl Docs {
             Ask::Caption(category) => self.run_active("caption.insert", &[category, text], cx),
             Ask::Formula(_) => self.run_active("formula.insert", &[text], cx),
             Ask::Comment => {
-                self.side = crate::docs::Side::Review;
+                self.show_side(crate::docs::Side::Review, cx);
                 self.run_active("comment.insert", &[text], cx);
             }
         }

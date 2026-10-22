@@ -15,6 +15,8 @@ pub(super) enum Arg<'a> {
     Atom(&'a str),
     /// Quoted, or a literal when quotes cannot carry it.
     Text(&'a str),
+    /// Always a literal: a whole message.
+    Bytes(&'a [u8]),
 }
 
 /// OK, or the words of NO or BAD.
@@ -57,7 +59,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Conn<S> {
         format!("A{}", self.tags)
     }
 
-    /// Sends a command; untagged responses go to `each`.
+    /// Sends a command; replies go to `each`, tagged last.
     pub(super) async fn run(
         &mut self,
         verb: &str,
@@ -74,15 +76,17 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Conn<S> {
                 Arg::Text(text) => match quoted(text)? {
                     Some(quoted) => line.extend_from_slice(quoted.as_bytes()),
                     None => {
-                        line.extend_from_slice(format!("{{{}}}\r\n", text.len()).as_bytes());
-                        self.wire.write(&line).await?;
-                        line.clear();
-                        if let Err(words) = self.proceed(&tag, &mut each).await? {
+                        let bytes = text.as_bytes();
+                        if let Err(words) = self.literal(&tag, &mut line, bytes, &mut each).await? {
                             return Ok(Err(words));
                         }
-                        line.extend_from_slice(text.as_bytes());
                     }
                 },
+                Arg::Bytes(bytes) => {
+                    if let Err(words) = self.literal(&tag, &mut line, bytes, &mut each).await? {
+                        return Ok(Err(words));
+                    }
+                }
             }
         }
         line.extend_from_slice(b"\r\n");
@@ -98,6 +102,24 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Conn<S> {
                 }
             }
         }
+    }
+
+    /// Sends `line` with a literal's length, then its bytes.
+    async fn literal(
+        &mut self,
+        tag: &str,
+        line: &mut Vec<u8>,
+        bytes: &[u8],
+        each: &mut impl FnMut(&Response, &[u8]),
+    ) -> Result<Outcome> {
+        line.extend_from_slice(format!("{{{}}}\r\n", bytes.len()).as_bytes());
+        self.wire.write(line).await?;
+        line.clear();
+        let outcome = self.proceed(tag, each).await?;
+        if outcome.is_ok() {
+            line.extend_from_slice(bytes);
+        }
+        Ok(outcome)
     }
 
     /// Waits for `+` before a literal.
@@ -152,6 +174,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Conn<S> {
                             done.0
                         )));
                     }
+                    each(response, raw);
                     match status {
                         Status::Ok => Ok(Step::Done(Ok(()))),
                         Status::No | Status::Bad => Ok(Step::Done(Err(words(raw)))),

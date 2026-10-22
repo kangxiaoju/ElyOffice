@@ -231,12 +231,35 @@ pub fn write_attachment(name: &str, bytes: &[u8], dir: &Path) -> io::Result<Path
     Ok(target)
 }
 
+/// One file name that stays inside its folder.
+fn plain_name(name: &Path) -> bool {
+    let mut parts = name.components();
+    let single = matches!((parts.next(), parts.next()), (Some(std::path::Component::Normal(_)), None));
+    single && !(cfg!(windows) && windows_special(&name.to_string_lossy()))
+}
+
+/// A stream suffix or a device name on Windows.
+fn windows_special(name: &str) -> bool {
+    let base = name.split('.').next().unwrap_or_default().trim_end().to_ascii_uppercase();
+    let numbered = |prefix: &str| {
+        base.strip_prefix(prefix)
+            .is_some_and(|n| n.len() == 1 && n.as_bytes()[0].is_ascii_digit() && n != "0")
+    };
+    name.contains(':') || ["CON", "PRN", "AUX", "NUL"].contains(&base.as_str()) || numbered("COM") || numbered("LPT")
+}
+
 /// Claims a free name like `name`, then fills it.
 fn attach(
     dir: &Path,
     name: &Path,
     fill: impl FnOnce(&mut std::fs::File) -> io::Result<()>,
 ) -> io::Result<PathBuf> {
+    if !plain_name(name) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} is not a plain file name", name.display()),
+        ));
+    }
     std::fs::create_dir_all(dir).map_err(|e| with_path(dir, e))?;
     let stem = name.file_stem().unwrap_or_default().to_string_lossy().into_owned();
     let ext = name

@@ -390,7 +390,7 @@ impl LokView {
             return;
         };
         if event.button == MouseButton::Left {
-            self.dragging = false;
+            self.end_drag();
         }
         self.mouse(
             1,
@@ -429,9 +429,8 @@ impl LokView {
             cx.notify();
             return;
         }
-        if self.dragging && event.pressed_button == Some(MouseButton::Left) {
-            self.mouse(2, event.position, 1, 1, &event.modifiers);
-        } else if event.pressed_button.is_none() {
+        // A drag's moves come from the window (render.rs).
+        if event.pressed_button.is_none() {
             // A hover: the kernel answers with its pointer.
             self.mouse(2, event.position, 0, 1, &event.modifiers);
         }

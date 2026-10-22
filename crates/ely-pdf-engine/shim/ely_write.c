@@ -29,12 +29,11 @@ static int runes(fz_context *ctx, const char *text, int **out)
 	return n;
 }
 
-/* Lines no wider than `width`: [from, to) each. */
+/* Lines no wider than `width`: [from, to) each, and widths. */
 static int lay_out(fz_context *ctx, ely_pen *p, const int *u, int n, float size, float width, int *from, int *to,
-	float *widest)
+	float *wide)
 {
 	int i = 0, lines = 0;
-	*widest = 0;
 	while (i <= n)
 	{
 		int j, space = -1;
@@ -53,16 +52,36 @@ static int lay_out(fz_context *ctx, ely_pen *p, const int *u, int n, float size,
 		if (j < n && u[j] != '\n' && space > i)
 		{
 			/* Too long for the line: wrap at a space. */
+			wide[lines] = before;
 			to[lines++] = space;
-			*widest = fz_max(*widest, before);
 			i = space + 1;
 		}
 		else
 		{
+			wide[lines] = run;
 			to[lines++] = j;
-			*widest = fz_max(*widest, run);
 			i = j < n && u[j] != '\n' ? j : j + 1;
 		}
+	}
+	return lines;
+}
+
+/* Lines split at newlines only, each kept whole. */
+static int lay_kept(fz_context *ctx, ely_pen *p, const int *u, int n, float size, int *from, int *to, float *wide)
+{
+	int i, lines = 0;
+	from[0] = 0;
+	wide[0] = 0;
+	for (i = 0; i <= n; i++)
+	{
+		if (i < n && u[i] != '\n')
+		{
+			wide[lines] += ely_pen_advance(ctx, p, u[i], size);
+			continue;
+		}
+		to[lines++] = i;
+		from[lines] = i + 1;
+		wide[lines] = 0;
 	}
 	return lines;
 }
@@ -143,9 +162,11 @@ typedef struct
 	ely_pen p;
 	int *u, n;
 	int *from, *to, lines;
-	float widest;
+	float *wide;
 	fz_point first;
 	float gap;
+	/* Each line's origin, when lines keep their places. */
+	const fz_point *at;
 } laid;
 
 static void drop_laid(fz_context *ctx, laid *l)
@@ -154,10 +175,18 @@ static void drop_laid(fz_context *ctx, laid *l)
 	fz_free(ctx, l->u);
 	fz_free(ctx, l->from);
 	fz_free(ctx, l->to);
+	fz_free(ctx, l->wide);
+}
+
+/* Where line `line` starts, page space. */
+static fz_point line_origin(laid *l, int line)
+{
+	return l->at ? l->at[line] : fz_make_point(l->first.x, l->first.y + line * l->gap);
 }
 
 /* Lays `a` out; a missing glyph, or -1: unwritable font. */
-static int lay_text(fz_context *ctx, text_args *a, fz_font *own, pdf_page *page, fz_point first, float gap, laid *l)
+static int lay_text(fz_context *ctx, text_args *a, fz_font *own, pdf_page *page, fz_point first, float gap,
+	const fz_point *at, laid *l)
 {
 	int i;
 	if (ely_choose_pen(ctx, a->font, own, page, &l->p) < 0)
@@ -168,16 +197,35 @@ static int lay_text(fz_context *ctx, text_args *a, fz_font *own, pdf_page *page,
 			return l->u[i];
 	l->from = fz_malloc_array(ctx, l->n + 2, int);
 	l->to = fz_malloc_array(ctx, l->n + 2, int);
-	l->lines = lay_out(ctx, &l->p, l->u, l->n, a->size, a->box[2], l->from, l->to, &l->widest);
+	l->wide = fz_malloc_array(ctx, l->n + 2, float);
+	if (at)
+	{
+		l->lines = lay_kept(ctx, &l->p, l->u, l->n, a->size, l->from, l->to, l->wide);
+		/* A kept line past the box: wrap like any edit. */
+		for (i = 0; i < l->lines && at; i++)
+			if (at[i].x + l->wide[i] > a->box[0] + a->box[2] + 0.5f)
+				at = NULL;
+	}
+	/* Wrap from the first line's x to the box edge. */
+	if (!at)
+		l->lines = lay_out(ctx, &l->p, l->u, l->n, a->size, a->box[0] + a->box[2] - first.x, l->from, l->to, l->wide);
 	l->first = first;
 	l->gap = gap;
+	l->at = at;
 	return 0;
 }
 
 /* The area laid text covers, in page space. */
 static fz_rect laid_area(laid *l, float size)
 {
-	return fz_make_rect(l->first.x, l->first.y - size, l->first.x + l->widest, l->first.y + (l->lines - 1) * l->gap + size * 0.3f);
+	fz_rect area = fz_empty_rect;
+	int line;
+	for (line = 0; line < l->lines; line++)
+	{
+		fz_point o = line_origin(l, line);
+		area = fz_union_rect(area, fz_make_rect(o.x, o.y - size, o.x + l->wide[line], o.y + size * 0.3f));
+	}
+	return area;
 }
 
 /* Writes laid text onto `page` of `pdf`. */
@@ -195,7 +243,8 @@ static void draw_laid(fz_context *ctx, pdf_document *pdf, pdf_page *page, laid *
 		fz_append_string(ctx, buf, "q\n");
 		for (line = 0; line < l->lines; line++)
 		{
-			fz_matrix tm = fz_concat(fz_make_matrix(1, 0, 0, -1, l->first.x, l->first.y + line * l->gap), to_user);
+			fz_point o = line_origin(l, line);
+			fz_matrix tm = fz_concat(fz_make_matrix(1, 0, 0, -1, o.x, o.y), to_user);
 			fz_append_printf(ctx, buf, "BT /%s %g Tf %g %g %g rg %g %g %g %g %g %g Tm <", name, a->size,
 				((a->rgb >> 16) & 255) / 255.0f, ((a->rgb >> 8) & 255) / 255.0f, (a->rgb & 255) / 255.0f,
 				tm.a, tm.b, tm.c, tm.d, tm.e, tm.f);
@@ -260,6 +309,15 @@ static void preview(fz_context *ctx, pdf_document *pdf, int number, int block, c
 		fz_rethrow(ctx);
 }
 
+/* How many newlines `text` holds. */
+static int newlines(const char *text)
+{
+	int n = 0;
+	for (; *text; text++)
+		n += *text == '\n';
+	return n;
+}
+
 /* Writes or previews text: 0, 2 missing, 3 unwritable, -1. */
 int ely_put_text(fz_context *ctx, fz_document *doc, int number, int block, const char *expected, const char *text,
 	const char *font, float size, int rgb, const float box[3], const char *password, float scale, int *missing,
@@ -281,6 +339,7 @@ int ely_put_text(fz_context *ctx, fz_document *doc, int number, int block, const
 		text_args a = { text, font, size, rgb, { box[0], box[1], box[2] } };
 		fz_point first = fz_make_point(box[0], box[1] + size * 0.8f);
 		float gap = size * 1.2f;
+		const fz_point *at = NULL;
 		pdf = ely_pdf_of(ctx, doc);
 		page = pdf_load_page(ctx, pdf, number);
 		/* Checks precede the step, so redo survives a refusal. */
@@ -289,8 +348,12 @@ int ely_put_text(fz_context *ctx, fz_document *doc, int number, int block, const
 			ely_read_block(ctx, doc, page, number, block, expected, &shape);
 			first = shape.first;
 			gap = shape.gap;
+			/* Same lines, size and width: each line stays put. */
+			if (newlines(text) + 1 == shape.count && fabsf(size - shape.size) <= 0.01f
+				&& fabsf(box[2] - (shape.bbox.x1 - shape.bbox.x0)) <= 0.5f)
+				at = shape.at;
 		}
-		*missing = lay_text(ctx, &a, shape.font, page, first, gap, &l);
+		*missing = lay_text(ctx, &a, shape.font, page, first, gap, at, &l);
 		if (!*missing)
 		{
 			fz_rect drawn = laid_area(&l, size), region = drawn;

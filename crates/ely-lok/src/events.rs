@@ -11,6 +11,10 @@ use crate::ffi::Document;
 
 mod cell;
 mod parse;
+mod text;
+#[cfg(test)]
+mod tests;
+pub use text::TextAnchors;
 pub use cell::{Cell, Function, Mark, Request, offered};
 use cell::{functions_of, marks_of, request_of, usage_of};
 pub use parse::A11y;
@@ -78,6 +82,8 @@ pub struct Events {
     /// The CSS pointer name; empty until the kernel says.
     pub pointer: String,
     pub selection: Vec<Rect>,
+    /// Print-twips anchors for relative text rectangles.
+    pub text: TextAnchors,
     /// The selected object's frame, if any.
     pub graphic: Option<Rect>,
     /// The selected image is in crop mode.
@@ -231,14 +237,8 @@ fn record(slot: &mut Slot, kind: i32, text: &str) -> Option<u32> {
                 None => batch.all = true,
             }
         }
-        CURSOR => batch.cursor = rect_in(batch, "cursor", text),
-        SELECTION => {
-            let parts: Vec<&str> = text.split(';').collect();
-            batch.selection = parts
-                .into_iter()
-                .filter_map(|part| rect_in(batch, "selection", part))
-                .collect();
-        }
+        CURSOR => text::cursor(batch, text),
+        SELECTION => text::selection(batch, text),
         CURSOR_VISIBLE => batch.cursor_visible = text == "true",
         MOUSE_POINTER => batch.pointer = text.to_string(),
         GRAPHIC => {

@@ -3,6 +3,7 @@ use super::*;
 mod borders;
 mod clip;
 mod commands;
+mod edge;
 mod fit;
 mod formula;
 mod input;
@@ -10,6 +11,7 @@ mod large;
 mod read_only;
 mod show_borders;
 mod theme;
+mod text;
 use gpui::{App, Bounds, Entity, point, size};
 
 #[test]

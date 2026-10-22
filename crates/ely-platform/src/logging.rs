@@ -38,13 +38,19 @@ fn wire(meta: &Metadata) -> bool {
     http && meta.level() > Level::Info
 }
 
+/// html5ever says foster parenting is missing; it is not.
+fn stale(record: &Record) -> bool {
+    record.target() == "html5ever::tree_builder"
+        && record.args().as_str() == Some("foster parenting not implemented")
+}
+
 impl Log for Private {
     fn enabled(&self, meta: &Metadata) -> bool {
         !wire(meta) && self.0.enabled(meta)
     }
 
     fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
+        if self.enabled(record.metadata()) && !stale(record) {
             self.0.log(record);
         }
     }
@@ -122,5 +128,60 @@ mod trim_tests {
         assert!(kept.len() <= 500 && kept.starts_with("line ") && kept.ends_with("line 199\n"), "{kept}");
         super::trimmed(&path, 1000).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), kept, "a short log stays");
+    }
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use std::{
+        io::Write,
+        sync::{Arc, Mutex},
+    };
+
+    use env_logger::{Builder, Target};
+    use log::{Level, Log, Record};
+
+    #[derive(Clone, Default)]
+    struct Shared(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Shared {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn logged(target: &str, level: Level, args: std::fmt::Arguments) -> String {
+        let out = Shared::default();
+        let logger = Builder::new()
+            .filter_level(log::LevelFilter::Trace)
+            .target(Target::Pipe(Box::new(out.clone())))
+            .build();
+        let record = Record::builder()
+            .target(target)
+            .level(level)
+            .args(args)
+            .build();
+        super::Private(logger).log(&record);
+        String::from_utf8(out.0.lock().unwrap().clone()).unwrap()
+    }
+
+    #[test]
+    fn a_stale_html5ever_claim_stays_out_and_others_stay_in() {
+        let tree = "html5ever::tree_builder";
+        let stale = logged(
+            tree,
+            Level::Warn,
+            format_args!("foster parenting not implemented"),
+        );
+        assert!(stale.is_empty(), "{stale}");
+        let other = logged(tree, Level::Warn, format_args!("something else"));
+        assert!(other.contains("something else"), "{other}");
+        let wire = logged("ureq::unit", Level::Debug, format_args!("bytes"));
+        assert!(wire.is_empty(), "{wire}");
     }
 }

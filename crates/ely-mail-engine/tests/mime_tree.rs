@@ -73,6 +73,7 @@ fn a_built_latin1_text_attachment_reads_back_as_built() {
         },
         to: Vec::new(),
         cc: Vec::new(),
+        bcc: Vec::new(),
         subject: "s".into(),
         text: "t".into(),
         html: None,

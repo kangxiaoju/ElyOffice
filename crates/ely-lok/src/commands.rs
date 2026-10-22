@@ -165,6 +165,22 @@ pub fn fonts(json: &str) -> io::Result<Vec<String>> {
     Ok(fonts.keys().cloned().collect())
 }
 
+/// Writer's Western and Asian fonts; empty when mixed (0055).
+pub fn char_fonts(json: &str) -> io::Result<Option<[String; 2]>> {
+    let fonts = parse(json)?;
+    // Past Writer's lookup limit: none read.
+    if fonts["unread"] == true {
+        return Ok(None);
+    }
+    let read = |key: &str| {
+        fonts[key]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| invalid(format!("the fonts lack {key}: {json}")))
+    };
+    Ok(Some([read("western")?, read("asian")?]))
+}
+
 /// One style family: 1 character, 2 paragraph, 8 page.
 pub fn styles(json: &str, family: &str) -> io::Result<Vec<String>> {
     let key = match family {
@@ -382,6 +398,11 @@ mod tests {
         assert!(super::styles(styles, "3").is_err(), "no third family");
         assert!(super::styles("{}", "2").is_err(), "a missing family fails");
         assert!(super::fonts("not json").is_err());
+        let both = r#"{"western":"Liberation Mono","asian":""}"#;
+        let fonts = super::char_fonts(both).expect("fonts");
+        assert_eq!(fonts, Some(["Liberation Mono".into(), String::new()]));
+        assert_eq!(super::char_fonts(r#"{"unread":true}"#).expect("unread"), None);
+        assert!(super::char_fonts(r#"{"western":"Arial"}"#).is_err(), "no Asian font");
     }
 
     fn styles_of(json: &str, family: &str) -> Vec<String> {

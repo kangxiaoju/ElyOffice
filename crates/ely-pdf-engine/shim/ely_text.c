@@ -382,6 +382,7 @@ void ely_read_block(fz_context *ctx, fz_document *doc, pdf_page *page, int numbe
 	fz_try(ctx)
 	{
 		fz_stext_block *block;
+		fz_stext_line *line;
 		fz_stext_char *ch;
 		text = read_text(ctx, doc, number);
 		block = nth_block(text, index);
@@ -402,6 +403,12 @@ void ely_read_block(fz_context *ctx, fz_document *doc, pdf_page *page, int numbe
 		shape->rgb = (int)(ch->argb & 0xffffff);
 		shape->bbox = block->bbox;
 		baselines(block, shape);
+		for (line = block->u.t.first_line; line; line = line->next)
+			shape->count++;
+		shape->at = fz_malloc_array(ctx, shape->count, fz_point);
+		shape->count = 0;
+		for (line = block->u.t.first_line; line; line = line->next)
+			shape->at[shape->count++] = line->first_char->origin;
 	}
 	fz_always(ctx)
 	{
@@ -425,6 +432,8 @@ void ely_drop_shape(fz_context *ctx, ely_shape *shape)
 {
 	targets *t = shape->glyphs;
 	fz_drop_font(ctx, shape->font);
+	fz_free(ctx, shape->at);
+	shape->at = NULL;
 	if (t)
 	{
 		fz_free(ctx, t->at);

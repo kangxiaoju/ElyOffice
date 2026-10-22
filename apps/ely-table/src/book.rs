@@ -68,6 +68,8 @@ pub struct Book {
     pub choices: Option<crate::rules::Choices>,
     /// Read text files waiting for the import dialog.
     pub imports: std::collections::VecDeque<crate::text::Pending>,
+    /// Undo and Redo as the menus show them.
+    pub undo_menu: (bool, bool),
 }
 
 impl Host for Book {
@@ -117,6 +119,21 @@ impl Host for Book {
     }
 }
 
+/// ElyTable's menus after File; `undo` greys Undo and Redo.
+fn menus(undo: (bool, bool), cx: &App) -> Vec<gpui::Menu> {
+    vec![
+        gpui::Menu::new(ely_ui::i18n::text(cx, "menu.edit", &[])).items(ely_office::undo_items(undo, cx)),
+        gpui::Menu::new(ely_ui::i18n::text(cx, "menu.view", &[])).items(ely_office::zoom_items(false, cx)),
+        crate::sheets::menu(cx),
+        crate::cells::menu(cx),
+        crate::analysis::menu(cx),
+        crate::format::menu(cx),
+        crate::formulas::menu(cx),
+        crate::data::menu(cx),
+        crate::page::menu(cx),
+    ]
+}
+
 /// The window root with a blank workbook.
 pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
     ely_lok::init(cx);
@@ -144,17 +161,8 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
         ),
     ]);
     ely_office::bind_zoom_keys(cx);
-    let menus = vec![
-        gpui::Menu::new(ely_ui::i18n::text(cx, "menu.view", &[])).items(ely_office::zoom_items(false, cx)),
-        crate::sheets::menu(cx),
-        crate::cells::menu(cx),
-        crate::analysis::menu(cx),
-        crate::format::menu(cx),
-        crate::formulas::menu(cx),
-        crate::data::menu(cx),
-        crate::page::menu(cx),
-    ];
-    let root = ely_ui::document_root(app, book.clone().into(), &ely_ui::commands::FILE, menus, window, cx);
+    ely_office::bind_undo_keys(cx);
+    let root = ely_ui::document_root(app, book.clone().into(), &ely_ui::commands::FILE, menus((false, false), cx), window, cx);
     book.update(cx, |book, cx| {
         book.core.root = root.downgrade();
         book.own_window(window, cx);
@@ -170,7 +178,7 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
         opening.update(cx, |book, cx| book.open_asked(path, cx))
     });
     let closing = book.clone();
-    window.on_window_should_close(cx, move |window, cx| {
+    ely_gpui_component::shell::guard_close(window, cx, move |window, cx| {
         closing.update(cx, |book, cx| book.should_close(window, cx))
     });
     root
@@ -198,6 +206,20 @@ impl Book {
             panel_shown: true,
             choices: None,
             imports: Default::default(),
+            undo_menu: (false, false),
+        }
+    }
+
+    /// Greys Undo and Redo as the active workbook's kernel says.
+    fn sync_menus(&mut self, cx: &mut Context<Self>) {
+        let able = self.active_tab().map_or((false, false), |tab| ely_office::undo_able(tab.view.read(cx)));
+        if able != self.undo_menu {
+            self.undo_menu = able;
+            log::info!("table: undo {}, redo {}", able.0, able.1);
+            cx.defer(move |cx| {
+                ely_ui::set_document_menus(AppId::Table, &ely_ui::commands::FILE, menus(able, cx), cx);
+                cx.refresh_windows();
+            });
         }
     }
 
@@ -371,6 +393,7 @@ impl Render for Book {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Another workbook may have become active.
         self.refill(cx);
+        self.sync_menus(cx);
         let title = self
             .active_tab()
             .map_or_else(|| AppId::Table.name().into(), |tab| tab.name.clone());
@@ -395,6 +418,7 @@ impl Render for Book {
             .children(self.dialog_element(cx))
             .children(self.context_menu(cx));
         let root = Self::bind_zoom(crate::cells::bind(crate::sheets::bind(root, cx), cx), cx);
+        let root = Self::bind_undo(root, cx);
         let root = crate::data::bind(crate::formulas::bind(root, cx), cx);
         let root = crate::page::bind(crate::protect::bind(root, cx), cx);
         crate::analysis::bind(crate::rules::bind(root, cx), cx)

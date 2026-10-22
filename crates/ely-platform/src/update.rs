@@ -32,7 +32,6 @@ const DOWNLOAD_LIMIT: u64 = 4 << 30;
 const MANIFEST_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_REDIRECTS: usize = 5;
-const PACKAGE_MANAGED: [&str; 5] = ["/usr", "/opt", "/app", "/snap", "/nix/store"];
 
 /// Longest a download may go without a byte.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -50,12 +49,6 @@ pub enum Check {
     Available(Release),
 }
 
-#[derive(Debug, PartialEq)]
-pub enum InstallPolicy {
-    SelfManaged,
-    PackageManager,
-}
-
 #[derive(Deserialize)]
 struct Manifest {
     version: Version,
@@ -71,20 +64,6 @@ struct Asset {
 /// The manifest key of this build, such as `macos-aarch64`.
 pub fn platform() -> String {
     format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
-}
-
-pub fn install_policy() -> Result<InstallPolicy> {
-    let exe = std::env::current_exe().context("cannot find the running executable")?;
-    Ok(policy_for(std::env::consts::OS, &exe))
-}
-
-fn policy_for(os: &str, exe: &Path) -> InstallPolicy {
-    let managed = PACKAGE_MANAGED.iter().any(|prefix| exe.starts_with(prefix));
-    if os == "linux" && managed {
-        InstallPolicy::PackageManager
-    } else {
-        InstallPolicy::SelfManaged
-    }
 }
 
 /// Fetches the manifest and compares it with `current`. Never installs.
@@ -417,32 +396,7 @@ impl<T: Transport> Transport for Idle<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use super::{InstallPolicy, file_name, policy_for, secure_host};
-
-    #[test]
-    fn only_a_linux_package_install_defers_to_the_package_manager() {
-        let usr = Path::new("/usr/bin/ely-doc");
-        assert_eq!(policy_for("linux", usr), InstallPolicy::PackageManager);
-        assert_eq!(
-            policy_for("linux", Path::new("/app/bin/ely-doc")),
-            InstallPolicy::PackageManager
-        );
-        assert_eq!(
-            policy_for("linux", Path::new("/home/me/Apps/ely-doc")),
-            InstallPolicy::SelfManaged
-        );
-        assert_eq!(
-            policy_for("linux", Path::new("/tmp/.mount_ElyDoc/usr/bin/ely-doc")),
-            InstallPolicy::SelfManaged
-        );
-        assert_eq!(policy_for("macos", usr), InstallPolicy::SelfManaged);
-        assert_eq!(
-            policy_for("windows", Path::new("C:/Program Files/Ely")),
-            InstallPolicy::SelfManaged
-        );
-    }
+    use super::{file_name, secure_host};
 
     #[test]
     fn plain_http_is_for_this_machine_only() {

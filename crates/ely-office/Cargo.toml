@@ -22,6 +22,9 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 ely-ui.workspace = true
 
+[features]
+test-support = ["ely-ui/test-support"]
+
 [dev-dependencies]
 tempfile.workspace = true
 

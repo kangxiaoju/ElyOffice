@@ -1,5 +1,3 @@
-mod fake;
-
 use std::{fs, path::Path};
 
 use ely_mail_engine::{Fetched, Key, Store};

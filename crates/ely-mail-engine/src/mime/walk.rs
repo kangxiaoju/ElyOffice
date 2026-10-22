@@ -22,8 +22,8 @@ pub(super) struct Shape {
 pub(super) fn shape(message: &Message) -> Shape {
     let mut shape = Shape::default();
     // RFC 3501 §6.4.5: a lone body is part 1.
-    let root = match message.parts[0].body {
-        PartType::Multipart(_) => Vec::new(),
+    let root = match message.parts[0].content_type() {
+        Some(kind) if kind.c_type.eq_ignore_ascii_case("multipart") => Vec::new(),
         _ => vec![1],
     };
     Walk { message }.body(0, &root, &mut shape);

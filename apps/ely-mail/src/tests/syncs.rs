@@ -1,4 +1,4 @@
-use ely_mail_engine::{Protocol, Store};
+use ely_mail_engine::{Protocol, Role, Store};
 use gpui::TestAppContext;
 
 use super::{Keys, account, adding, closed_port, settle, type_in, window, window_with};
@@ -112,4 +112,37 @@ fn a_pop_account_keeps_a_server_copy_unless_told() {
     assert_eq!(protocol(cx), Protocol::Pop { keep: true });
     cx.update(|_, app| mail.update(app, |mail, _| mail.adding.as_mut().unwrap().set_keep(false)));
     assert_eq!(protocol(cx), Protocol::Pop { keep: false });
+}
+
+#[test]
+fn folders_show_at_a_step_before_the_sync_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let ann = Store::open(dir.path())
+        .unwrap()
+        .add_account(&account("ann@example.com"))
+        .unwrap();
+    let mut cx = TestAppContext::single();
+    let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+    settle(cx, |app| {
+        mail.read(app)
+            .syncs
+            .get(&ann)
+            .is_some_and(|each| each.failed.is_some())
+    });
+    let (told, steps) = tokio::sync::mpsc::unbounded_channel();
+    cx.update(|_, app| {
+        mail.update(app, |mail, cx| {
+            let run = mail.syncs[&ann].run;
+            mail.follow_steps(ann, run, steps, cx);
+        })
+    });
+    Store::open(dir.path())
+        .unwrap()
+        .set_folders(
+            ann,
+            &[("INBOX", Some(Role::Inbox)), ("Sent", Some(Role::Sent))],
+        )
+        .unwrap();
+    told.send(()).unwrap();
+    settle(cx, |app| mail.read(app).syncs[&ann].folders.len() == 2);
 }

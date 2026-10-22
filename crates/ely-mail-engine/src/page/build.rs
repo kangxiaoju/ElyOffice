@@ -168,8 +168,10 @@ impl Build<'_> {
             local_name!("blockquote") => self.quote(at, flow, context),
             local_name!("ul") | local_name!("ol") | local_name!("menu") => {
                 let start = (*name == local_name!("ol")).then(|| {
-                    let start = value(attrs, "start").and_then(|start| start.trim().parse().ok());
-                    start.unwrap_or(1)
+                    // HTML integers are 32-bit; larger ones count from 1.
+                    let start =
+                        value(attrs, "start").and_then(|start| start.trim().parse::<u32>().ok());
+                    start.map_or(1, u64::from)
                 });
                 self.list(at, start, flow, context);
             }

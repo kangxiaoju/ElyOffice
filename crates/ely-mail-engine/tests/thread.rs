@@ -1,5 +1,3 @@
-mod fake;
-
 use ely_mail_engine::{Fetched, Key, MailboxId, MessageId, Role, Store};
 
 /// `links` is the In-Reply-To then References header.

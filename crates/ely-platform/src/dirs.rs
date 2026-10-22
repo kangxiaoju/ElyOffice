@@ -12,8 +12,19 @@ pub fn data_dir(app: AppId) -> Result<PathBuf> {
 
 /// The suite's folder: each app's, and the shared settings.
 pub(crate) fn root() -> Result<PathBuf> {
+    if let Some(root) = chosen_root(crate::env::value("ELY_DATA_ROOT"))? {
+        return Ok(root);
+    }
     let base = BaseDirs::new().context("no home directory")?;
     Ok(base.data_local_dir().join("ElyOffice"))
+}
+
+/// Benchmarks only: a seeded folder, never the user's.
+fn chosen_root(over: Option<String>) -> Result<Option<PathBuf>> {
+    let Some(root) = over else { return Ok(None) };
+    let root = PathBuf::from(root);
+    anyhow::ensure!(root.is_absolute(), "ELY_DATA_ROOT is not absolute: {}", root.display());
+    Ok(Some(root))
 }
 
 /// Omarchy's active theme directory; `ELY_OMARCHY_DIR` overrides it.
@@ -33,7 +44,7 @@ fn omarchy_dir(home: &Path, over: Option<String>) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{data_dir, omarchy_dir};
+    use super::{chosen_root, data_dir, omarchy_dir};
     use crate::AppId;
 
     #[test]
@@ -44,6 +55,16 @@ mod tests {
         assert!(doc.ends_with("ElyOffice/ely-doc"), "{}", doc.display());
         assert!(mail.ends_with("ElyOffice/ely-mail"), "{}", mail.display());
         assert_ne!(doc, mail);
+    }
+
+    #[test]
+    fn a_data_root_override_must_be_absolute_and_wins() {
+        let at = std::env::temp_dir().join("ely-bench");
+        let chosen = chosen_root(Some(at.display().to_string())).unwrap();
+        assert_eq!(chosen, Some(at));
+        assert_eq!(chosen_root(None).unwrap(), None);
+        let err = chosen_root(Some("relative".into())).unwrap_err();
+        assert!(err.to_string().contains("not absolute"), "{err}");
     }
 
     #[test]

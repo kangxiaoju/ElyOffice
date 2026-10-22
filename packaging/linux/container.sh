@@ -17,4 +17,5 @@ share=()
 docker run --rm --user "$(id -u):$(id -g)" -v "$root:$root" ${share[@]+"${share[@]}"} -w "$root" \
   -e HOME="$root/target/ubuntu-home" -e CARGO_HOME="$root/target/ubuntu-cargo" \
   -e CARGO_TARGET_DIR="$root/target/ubuntu" -e ELY_RELEASE_TOKEN \
+  -e ELY_GOOGLE_CLIENT_ID -e ELY_GOOGLE_CLIENT_SECRET -e ELY_MICROSOFT_CLIENT_ID \
   "$image" "$@"

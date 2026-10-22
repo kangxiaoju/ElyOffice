@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "./fixtures.ts";
 
 const CELL = 28;
-const APPS = ["ElyDoc", "ElyTable", "ElyShow", "ElyPDF", "ElyTree", "ElyMark"];
+const APPS = ["ElyDoc", "ElyTable", "ElyShow", "ElyPDF", "ElyMail", "ElyTree", "ElyMark"];
 
 test.use({ reducedMotion: "reduce" });
 
@@ -55,7 +55,7 @@ test.beforeEach(async ({ page }) => {
 
 test.afterEach(() => expect(errors).toEqual([]));
 
-test("six links in reading order; reduced motion skips growth", async ({ page }) => {
+test("seven links in reading order; reduced motion skips growth", async ({ page }) => {
   await expect(page.locator(".doors a")).toHaveText(APPS);
   const anim = await page.locator(".block").first().evaluate((b) => getComputedStyle(b).animationName);
   expect(anim).toBe("none");

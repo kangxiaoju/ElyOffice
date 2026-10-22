@@ -19,4 +19,4 @@ node_modules/
 /Gitea.md
 /.work/
 /TyporaRef
-/oauth.env
+/cred.txt
