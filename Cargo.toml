@@ -71,6 +71,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 
 ely-files = { path = "crates/ely-files" }
 ely-ipc = { path = "crates/ely-ipc" }
+ely-embed = { path = "crates/ely-embed" }
 ely-lok = { path = "crates/ely-lok" }
 ely-mail-engine = { path = "crates/ely-mail-engine" }
 ely-office = { path = "crates/ely-office" }

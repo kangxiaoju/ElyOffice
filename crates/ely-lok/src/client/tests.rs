@@ -409,3 +409,49 @@ fn a_worker_that_cannot_start_says_why() {
     // The worker's own reason, not only a closed pipe.
     assert!(error.to_string().contains("lok-worker:"), "{error}");
 }
+
+/// A process that leaves is reaped once; its ending must be cached so a
+/// later poll still reports it (LOK-01).
+#[cfg(unix)]
+#[test]
+fn a_finished_process_keeps_its_ending_every_poll() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    // `true` exits at once and never speaks the worker protocol; a bare name
+    // resolves through PATH so the test is portable across systems.
+    let bin = PathBuf::from("true");
+    let mut worker = Worker::spawn_mode(
+        &bin,
+        &dir.path().join("install"),
+        &dir.path().join("profile"),
+        false,
+    )
+    .expect("a trivial process spawns");
+
+    // Poll until the process is reaped; bounded so a missing `true` fails fast.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let first = loop {
+        if let Some(why) = worker.ended() {
+            break why;
+        }
+        assert!(std::time::Instant::now() < deadline, "the process never left");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+
+    // The reaped status is gone from the OS; only the cache keeps it stable.
+    assert_eq!(worker.ended(), Some(first.clone()), "the ending is cached");
+    assert_eq!(worker.ended(), Some(first), "and stays the same every poll");
+}
+
+#[test]
+fn shutdown_reports_the_same_ending_every_time() {
+    let Some(install) = install() else {
+        eprintln!("SKIP: no pinned LOK build");
+        return;
+    };
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut worker = Worker::spawn(&install, &dir.path().join("profile")).expect("the worker");
+    worker.shutdown().expect("the worker shuts down");
+    let first = worker.ended().expect("the worker ended");
+    assert_eq!(worker.ended(), Some(first.clone()), "the ending is cached");
+    assert_eq!(worker.ended(), Some(first), "and stays the same every poll");
+}

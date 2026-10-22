@@ -19,6 +19,7 @@ fail() {
 }
 
 cargo build -q --release --manifest-path "$root/Cargo.toml" --bins -p ely-lok -p ely-pdf-engine \
+  --features ely-pdf-engine/worker-bin \
   -p ely-doc -p ely-table -p ely-show -p ely-pdf -p ely-tree -p ely-mark
 swiftc -O -o "$work/ax-frames" "$root/tests/scripts/ax-frames.swift"
 [ "$("$work/ax-frames" $$ | head -n 1)" != untrusted ] || { echo "SKIP: needs Accessibility permission"; exit 0; }

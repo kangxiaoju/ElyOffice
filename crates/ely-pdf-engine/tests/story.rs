@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! An HTML folder set as a PDF (MARK-11).
 
 use std::path::Path;

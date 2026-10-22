@@ -1,10 +1,14 @@
 //! Builds the MuPDF shim into the worker binary only.
+//!
+//! The client library (`cargo build -p ely-pdf-engine --lib`) computes the
+//! protocol build stamp and stops there: no MuPDF files, no C shim, no link
+//! arguments. The worker binary (`--features worker-bin`) additionally checks
+//! the MuPDF libraries, compiles the shim, and emits its link arguments.
 
 use std::path::PathBuf;
 
 fn main() {
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("set by cargo")).join("../..");
-    let mupdf = std::env::var_os("ELY_MUPDF_DIR").map_or_else(|| root.join("engines/mupdf-build"), PathBuf::from);
     // One stamp for client and worker; stale workers refused.
     let mut stamp: u64 = 0xcbf2_9ce4_8422_2325;
     for source in [
@@ -57,6 +61,12 @@ fn main() {
         }
     }
     println!("cargo:rustc-env=ELY_PDF_BUILD={stamp:016x}");
+
+    // The client library stops here; only the worker links MuPDF.
+    if std::env::var_os("CARGO_FEATURE_WORKER_BIN").is_none() {
+        return;
+    }
+    let mupdf = std::env::var_os("ELY_MUPDF_DIR").map_or_else(|| root.join("engines/mupdf-build"), PathBuf::from);
     println!("cargo:rerun-if-env-changed=ELY_MUPDF_DIR");
     let windows = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
     // MSVC's libmupdf.lib holds its third parties and PKCS#7.

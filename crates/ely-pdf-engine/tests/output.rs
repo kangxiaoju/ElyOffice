@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Images, text, optimized copies, printing leave, repaired files (C11.8).
 
 use std::path::Path;

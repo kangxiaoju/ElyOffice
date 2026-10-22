@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Text and object edits against the real worker (PDF-03, PDF-04).
 
 use std::path::Path;

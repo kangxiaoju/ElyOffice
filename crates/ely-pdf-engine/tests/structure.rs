@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Bookmarks, links, properties, attachments against the real worker (PDF-07).
 
 use std::path::Path;

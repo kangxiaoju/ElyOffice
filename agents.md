@@ -23,7 +23,7 @@
 
 ```text
 apps/        八个应用，各自一个二进制
-crates/      ely-ui  ely-platform  ely-ipc（应用与引擎 worker 之间的帧）；ely-files ely-lok ely-office（文档应用共用的外壳：标签、会话、保存、关闭询问、冲突、密码；引擎为 LOK 或 MuPDF）ely-pdf-engine（MuPDF worker 与客户端）；ely-mail-engine（邮件协议、同步与本地存储）
+crates/      ely-ui  ely-platform  ely-ipc（应用与引擎 worker 之间的帧）；ely-files ely-lok ely-embed（显式 worker/引擎路径的 Writer、Impress 可嵌入会话与 LokView surface）ely-office（文档应用共用的外壳：标签、会话、保存、关闭询问、冲突、密码；引擎为 LOK 或 MuPDF）ely-pdf-engine（MuPDF worker 与客户端）；ely-mail-engine（邮件协议、同步与本地存储）
 reference/   上游源码，只读，不属于本项目，不审查
 engines/     下载的二进制与引擎构建产物，不入库，不审查；mupdf-src 是 reference/mupdf 加 patches/mupdf 的构建副本
 patches/     对上游的补丁，随源码发行（libreoffice、mupdf）
@@ -187,7 +187,7 @@ cargo check --workspace
 cargo test --workspace
 rm -rf target/debug/incremental   每次构建或测试后都删（用户定：增量缓存会占满磁盘）
 cargo build -p ely-lok --bins   LOK 单测前先建 worker；单测不会自动重建它
-cargo build -p ely-pdf-engine --bins  ElyPDF 的 worker（链接 engines/mupdf-build，ELY_MUPDF_DIR 可改；运行时 ELY_PDF_WORKER 可指定）
+cargo build -p ely-pdf-engine --bins --features worker-bin  ElyPDF 的 worker（链接 engines/mupdf-build，ELY_MUPDF_DIR 可改；运行时 ELY_PDF_WORKER 可指定；客户端 `--lib` 不链 MuPDF）
 cargo run -p ely-doc          启动一个应用（ElyDoc 先 cargo build -p ely-lok --bins，LOK 取 ELY_LOK_DIR 或 engines/ 下的构建）；ELY_LOG 设日志级别；ELY_SMOKE=1 开窗口、画一帧即退出，ELY_SMOKE=hold 开着不抢焦点；ELY_NO_DIALOG=1 启动失败不弹对话框
 ```
 

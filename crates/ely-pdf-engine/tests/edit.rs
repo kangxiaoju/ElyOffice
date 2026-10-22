@@ -1,3 +1,4 @@
+#![cfg(feature = "worker-bin")]
 //! Page edits, undo and saving against the real worker (PDF-02).
 
 use std::path::Path;

@@ -7,6 +7,7 @@ mod fit;
 mod formula;
 mod input;
 mod large;
+mod read_only;
 mod show_borders;
 mod theme;
 use gpui::{App, Bounds, Entity, point, size};
