@@ -87,7 +87,7 @@ impl Doc {
     }
 
     /// Whether this is a presentation.
-    pub fn is_presentation(&self) -> bool {
+    pub fn is_deck(&self) -> bool {
         self.kind == 2
     }
 

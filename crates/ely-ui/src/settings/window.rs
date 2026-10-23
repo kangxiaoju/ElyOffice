@@ -3,13 +3,17 @@
 use ely_gpui_component::{
     buttons::{Button, SegmentedControl},
     feedback::Banner,
-    forms::{Input, InputEvent, Switch, TextInput},
+    layout::ScrollArea,
+    forms::{FontPicker, Input, InputEvent, Switch, TextInput},
     primitives::{IconName, Severity},
     settings::{self as kit, SettingsLayout, SettingsRow, SettingsSection, ThemeSelector},
+    theme::ActiveTheme as _,
 };
 use ely_platform::{
     AppId,
-    settings::{APPEARANCE, AUTHOR, Appearance, CHECK_UPDATES, LANGUAGE, Language, MOTION, Motion, OMARCHY_SYNC, Store, word},
+    settings::{
+        APPEARANCE, AUTHOR, Appearance, CHECK_UPDATES, LANGUAGE, Language, MOTION, Motion, OMARCHY_SYNC, Store, UI_FONT, word,
+    },
 };
 use gpui::{
     AppContext as _, Context, Entity, FocusHandle, Global, InteractiveElement as _, IntoElement, ParentElement, Render, SharedString, Styled,
@@ -57,6 +61,7 @@ pub struct SettingsView {
     author_saved: String,
     /// The latest author commit; older writes are dropped.
     author_asked: Arc<AtomicU64>,
+    ui_font: Entity<TextInput>,
     git: Option<Entity<TextInput>>,
     git_error: Option<SharedString>,
     /// The latest Git commit; older checks are dropped.
@@ -105,6 +110,7 @@ impl SettingsView {
                 }
             }));
         }
+        let ui_font = cx.new(|cx| TextInput::new(window, cx).label(text(cx, "settings.font", &[])));
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         Self {
@@ -114,6 +120,7 @@ impl SettingsView {
             author,
             author_saved: named,
             author_asked: Arc::default(),
+            ui_font,
             git,
             git_error,
             git_asked: Arc::default(),
@@ -236,7 +243,9 @@ impl SettingsView {
                     .description(text(cx, "settings.language.next", &[]))
                     .control(language),
             )
-            .row(SettingsRow::new(text(cx, "settings.motion", &[])).control(motion));
+            .row(SettingsRow::new(text(cx, "settings.motion", &[])).control(motion))
+            .row(SettingsRow::new(text(cx, "settings.font", &[])).control(self.font(cx)))
+            .row(SettingsRow::new(text(cx, "settings.text.size", &[])).control(super::picks::text_size(shared.ui_text_size, cx)));
         let mut section = match crate::updates::updater(cx) {
             Some(updates) => self.updates(section, &updates.read(cx).checked, shared.check_updates, cx),
             // A dev build does not update itself.
@@ -250,6 +259,17 @@ impl SettingsView {
             section = section.row(SettingsRow::new(text(cx, "settings.omarchy", &[])).control(follow));
         }
         section
+    }
+
+    /// The system's families; the one in force is chosen.
+    fn font(&self, cx: &gpui::App) -> impl IntoElement {
+        let picker = FontPicker::new("settings-ui-font", &self.ui_font)
+            .selected(match super::picks::waiting(UI_FONT, cx) {
+                Some(Value::String(family)) => family.into(),
+                _ => cx.theme().font_family.clone(),
+            })
+            .on_change(|family, _, cx| super::picks::pick(UI_FONT, Value::String(family.to_string()), cx));
+        div().w_full().max_w_64().child(picker)
     }
 
     /// The launch switch, and a check the user starts.
@@ -287,6 +307,11 @@ impl SettingsView {
                         SettingsRow::new(text(cx, "settings.autosave", &[]))
                             .description(text(cx, "settings.autosave.hint", &[]))
                             .control(autosave),
+                    )
+                    .row(
+                        SettingsRow::new(text(cx, "settings.zoom", &[]))
+                            .description(text(cx, "settings.zoom.hint", &[]))
+                            .control(div().w_full().max_w_64().child(super::picks::doc_zoom(current(cx).doc_zoom, cx))),
                     )
                     .into_any_element()
             }
@@ -411,7 +436,11 @@ impl Render for SettingsView {
             .collect();
         Shell::new(text(cx, "settings.title", &[]), &self.focus)
             .secondary()
-            .child(div().size_full().p_6().flex().flex_col().gap_4().children(unreadable).children(app_error).children(unsaved).child(layout))
+            .child(
+                div().size_full().p_6().flex().flex_col().gap_4().children(unreadable).children(app_error).children(unsaved).child(
+                    ScrollArea::new("settings-scroll").vertical().flex_1().min_h_0().child(layout),
+                ),
+            )
             .children(dialog)
     }
 }

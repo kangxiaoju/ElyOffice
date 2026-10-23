@@ -20,6 +20,7 @@ mod diagnostics;
 mod frame;
 mod storage;
 pub(crate) mod panels;
+mod picks;
 #[cfg(test)]
 mod tests;
 mod window;
@@ -118,8 +119,7 @@ fn changed((shared, error): (Shared, Option<SharedString>), cx: &mut App) {
     cx.refresh_windows();
 }
 
-/// Save kinds, each with its own failure.
-pub(crate) const SHARED: &str = "shared";
+/// Save kinds, each with its own failure; shared keys too.
 pub(crate) const PANELS: &str = "panels";
 pub(crate) const WINDOW: &str = "window";
 
@@ -149,6 +149,7 @@ pub(crate) type Turn = (Arc<AtomicU64>, u64);
 
 /// As `set`; whether written, a later turn skipping it.
 pub(crate) fn saved(key: &'static str, value: Value, turn: Option<Turn>, cx: &mut App) -> gpui::Task<bool> {
+    let current = turn.clone();
     let write = cx.background_executor().spawn(async move {
         let still = || turn.is_none_or(|(latest, asked)| latest.load(Ordering::SeqCst) == asked);
         Store::shared()?.set_if(key, value, still)
@@ -159,11 +160,14 @@ pub(crate) fn saved(key: &'static str, value: Value, turn: Option<Turn>, cx: &mu
         cx.update(|cx| {
             changed(read, cx);
             let ok = matches!(written, Ok(true));
-            // The reread must not hide this write's failure.
-            unsaved(SHARED, written.err().map(|error| {
-                log::error!("settings: {key} not saved: {error}");
-                error.to_string().into()
-            }), cx);
+            // Only the latest choice's outcome shows.
+            if current.is_none_or(|(latest, asked)| latest.load(Ordering::SeqCst) == asked) {
+                // The reread must not hide this write's failure.
+                unsaved(key, written.err().map(|error| {
+                    log::error!("settings: {key} not saved: {error}");
+                    error.to_string().into()
+                }), cx);
+            }
             ok
         })
     })

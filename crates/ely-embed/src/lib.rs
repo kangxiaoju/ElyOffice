@@ -71,8 +71,8 @@ impl OfficeRuntime {
         let mut worker = self.worker.lock().expect("the worker lock");
         let doc = worker.load(&file_url(&path))?;
         match kind {
-            OfficeKind::Writer if !doc.is_sheet() && !doc.is_presentation() => {}
-            OfficeKind::Presentation if doc.is_presentation() => {}
+            OfficeKind::Writer if !doc.is_sheet() && !doc.is_deck() => {}
+            OfficeKind::Presentation if doc.is_deck() => {}
             _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "the loaded document does not match the requested office kind")),
         }
         let geometry = layout(&mut worker, &doc)?;

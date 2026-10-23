@@ -13,6 +13,7 @@ use ely_gpui_component::{
     primitives::IconName,
     shell::{StatusBar, StatusBarItem},
     theme::ControlSize,
+    typography::tabular,
 };
 use ely_office::{Core, Host, Kind, prelude::*};
 use ely_platform::{AppId, startup};
@@ -46,6 +47,8 @@ pub struct Desk {
     /// The folders the watcher covers.
     pub watched: Vec<PathBuf>,
     pub comparing: Option<crate::compare::Comparing>,
+    /// The body font picker, while open.
+    pub font_picking: Option<Entity<ely_gpui_component::forms::TextInput>>,
     pub keeping: crate::restore::Keeping,
     pub look: crate::look::Look,
     pub look_file: PathBuf,
@@ -110,6 +113,7 @@ impl Host for Desk {
         self.watch_folders(cx);
         self.look_once(id, cx);
         let changed = view.read(cx).changed();
+        self.recount(id, changed, cx);
         self.autosave(id, changed, cx);
         let recheck = self.tab_mut(id).is_some_and(|tab| {
             if !tab.dirty(cx) {
@@ -200,6 +204,7 @@ pub(crate) fn open_in(
             watcher: None,
             watched: Vec::new(),
             comparing: None,
+            font_picking: None,
             keeping,
             look: look.clone(),
             look_file,
@@ -402,12 +407,17 @@ impl Desk {
             None => bar,
         };
         let caret = self.caret_said(cx).expect("a tab");
+        let bar = match self.count_item(cx) {
+            Some(count) => bar.right(count),
+            None => bar,
+        };
         bar.right(StatusBarItem::new("mark-caret").label(caret)).right(modes)
     }
 }
 
 impl Render for Desk {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.count_selection(cx);
         let tab = self.active_tab();
         let title = tab.map_or_else(|| AppId::Mark.name().into(), |tab| tab.name.clone());
         let body = match tab {
@@ -417,7 +427,8 @@ impl Render for Desk {
                 .flex_col()
                 .children(self.outside_banner(cx))
                 .children(large_banner(&tab.view, cx))
-                .child(div().flex_1().min_h_0().child(tab.view.clone()))
+                // Digits keep one width, so columns line up.
+                .child(tabular(div().flex_1().min_h_0()).child(tab.view.clone()))
                 .into_any_element(),
             None => {
                 let none = text(cx, "command.blocked.no_document", &[]);
@@ -429,7 +440,7 @@ impl Render for Desk {
             true => Shell::new(title, &self.core.focus),
             false => Shell::new(title, &self.core.focus)
                 .tabs(self.tab_strip(cx))
-                .left(Some(self.side.clone().into()))
+                .left(self.look.side.then(|| self.side.clone().into()))
                 .status(self.status(cx)),
         }
         .child(body);
@@ -448,6 +459,7 @@ impl Render for Desk {
             .children(self.core_dialog(cx))
             .children(self.naming_element(cx))
             .children(self.compare_dialog(cx))
+            .children(self.font_dialog(cx))
             .children(self.find_box(cx))
             .children(self.export_dialog(cx));
         let root = Self::mode_actions(Self::look_actions(root, cx), cx);
