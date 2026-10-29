@@ -5,11 +5,12 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 [ "$(uname)" = Darwin ] || { echo "SKIP: macOS only"; exit 0; }
 work=$(mktemp -d)
-shots=${ELY_LAYOUT_SHOTS:-$work/shots}
+# Screenshots outlive the run, for a look inside the panels.
+shots=${ELY_LAYOUT_SHOTS:-$(mktemp -d)}
 cleanup() {
   local status=$?
   [ -n "${pid:-}" ] && { pkill -9 -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; }
-  [ "$status" = 0 ] && [ -z "${ELY_LAYOUT_SHOTS:-}" ] && rm -rf "$work" || echo "kept $work" >&2
+  [ "$status" = 0 ] && rm -rf "$work" || echo "kept $work" >&2
   exit "$status"
 }
 trap cleanup EXIT
@@ -18,8 +19,7 @@ fail() {
   exit 1
 }
 
-cargo build -q --release --manifest-path "$root/Cargo.toml" --bins -p ely-lok -p ely-pdf-engine \
-  --features ely-pdf-engine/worker-bin \
+cargo build -q --release --manifest-path "$root/Cargo.toml" --bins -p ely-lok -p ely-pdf-worker \
   -p ely-doc -p ely-table -p ely-show -p ely-pdf -p ely-tree -p ely-mark
 swiftc -O -o "$work/ax-frames" "$root/tests/scripts/ax-frames.swift"
 [ "$("$work/ax-frames" $$ | head -n 1)" != untrusted ] || { echo "SKIP: needs Accessibility permission"; exit 0; }

@@ -10,13 +10,13 @@ use ely_gpui_component::{
 };
 use ely_mail_engine::{Auth, Error, Security};
 use gpui::{
-    AnyElement, App, Context, IntoElement, ParentElement as _, SharedString, Styled as _,
-    WeakEntity, Window, div,
+    AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement as _,
+    SharedString, Styled as _, WeakEntity, Window, div,
 };
 
 use crate::{
     adding::{Adding, Step},
-    kinds::{APPLE_ACCOUNT, KINDS, Kind},
+    kinds::{APPLE_ACCOUNT, GOOGLE_APP_PASSWORDS, KINDS, Kind},
     mail::{Mail, text},
     view::auth,
 };
@@ -144,26 +144,30 @@ impl Mail {
         let fields = &adding.fields;
         let password = div().w_full().child(PasswordInput::new(&fields.password));
         match adding.kind {
-            Kind::Gmail | Kind::Microsoft => DescriptionList::new()
+            Kind::Microsoft => DescriptionList::new()
                 .item(label("mail.add.address_hint"), field(&fields.address))
                 .into_any_element(),
-            Kind::ICloud => {
-                let open = Button::new("mail-add-apple", label("mail.icloud.open"))
-                    .on_click(|_, _, cx| cx.open_url(APPLE_ACCOUNT));
+            Kind::Gmail | Kind::ICloud => {
+                let (words, page) = match adding.kind {
+                    Kind::Gmail => ("mail.gmail", GOOGLE_APP_PASSWORDS),
+                    _ => ("mail.icloud", APPLE_ACCOUNT),
+                };
+                let open = Button::new("mail-add-page", label(&format!("{words}.open")))
+                    .on_click(move |_, _, cx| cx.open_url(page));
                 let rows = DescriptionList::new()
                     .item(label("mail.add.address"), field(&fields.address))
-                    .item(label("mail.icloud.password"), password);
+                    .item(label(&format!("{words}.password")), password);
                 div()
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .child(label("mail.icloud.steps"))
-                    .child(div().child(open))
+                    .child(label(&format!("{words}.steps")))
+                    .child(div().debug_selector(|| "mail-add-page".into()).child(open))
                     .child(rows)
                     .into_any_element()
             }
             Kind::Imap | Kind::Pop => {
-                let auths = [Auth::Password, Auth::Google, Auth::Microsoft]
+                let auths = [Auth::Password, Auth::Microsoft]
                     .map(|each| (auth_key(each), auth(each, cx)));
                 let methods = choice(
                     this,
@@ -174,7 +178,6 @@ impl Mail {
                         adding.stop();
                         adding.step = Step::Editing;
                         adding.auth = match key {
-                            "google" => Auth::Google,
                             "microsoft" => Auth::Microsoft,
                             _ => Auth::Password,
                         };
@@ -266,15 +269,30 @@ fn status(adding: &Adding, cx: &App) -> Option<AnyElement> {
             .gap_1()
             .child(said("mail.check.incoming", &checked.incoming))
             .child(said("mail.check.outgoing", &checked.outgoing))
+            .children(advice(adding.kind, checked).map(|key| line(Severity::Info, text(cx, key, &[]))))
             .into_any_element(),
     })
 }
+
+/// What to do when a provider refuses the password.
+fn advice(kind: Kind, checked: &ely_mail_engine::Checked) -> Option<&'static str> {
+    let refused = [&checked.incoming, &checked.outgoing]
+        .into_iter()
+        .any(|result| matches!(result, Err(Error::Rejected(_))));
+    (refused && kind == Kind::Gmail).then_some("mail.gmail.refused")
+}
+
+/// Outlook.com's words for an account it holds.
+const OUTLOOK_HELD: &str = "User is authenticated but not connected";
 
 /// A server's refusal in the reader's language, its words kept.
 pub fn failure(error: &Error, cx: &App) -> SharedString {
     let (key, detail) = match error {
         Error::Connect(err) => ("mail.error.connect", err.to_string()),
         Error::Tls(detail) => ("mail.error.tls_failed", detail.clone()),
+        Error::Rejected(detail) if detail.contains(OUTLOOK_HELD) => {
+            ("mail.error.outlook_held", detail.clone())
+        }
         Error::Rejected(detail) => ("mail.error.rejected", detail.clone()),
         Error::Server(detail) => ("mail.error.server", detail.clone()),
         Error::Protocol(detail) => ("mail.error.protocol", detail.clone()),

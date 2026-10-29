@@ -4,21 +4,21 @@ mod view;
 
 use std::{
     io,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Stdio,
     sync::atomic::AtomicBool,
 };
 
 use ely_platform::{
     AppId,
-    install::{INSTALL, Installed},
+    install::Installed,
     update::{self, Check, Release},
 };
 use futures::{StreamExt as _, channel::mpsc};
 use gpui::{App, AppContext as _, Context, Entity, EventEmitter, Global};
 
-/// The release server's newest release, listed by its API.
-const LATEST: &str = "https://api.github.com/repos/ELY-Open-Source/ElyOffice/releases/latest";
+/// The newest release's files; GitHub redirects, no API.
+const LATEST: &str = "https://github.com/ELY-Open-Source/ElyOffice/releases/latest/download";
 
 #[derive(Clone, Debug, PartialEq)]
 enum Phase {
@@ -91,12 +91,13 @@ fn note_path(app: AppId) -> io::Result<PathBuf> {
 }
 
 /// As the macOS installer: waits, installs, reopens; its exit code.
+#[cfg(target_os = "macos")]
 pub fn installer(app: AppId) -> Option<i32> {
     let args: Vec<String> = std::env::args().collect();
     let [_, flag, dmg, bundle, pid] = args.as_slice() else {
         return None;
     };
-    if flag != INSTALL {
+    if flag != ely_platform::install::INSTALL {
         return None;
     }
     let Ok(pid) = pid.parse() else {
@@ -104,7 +105,7 @@ pub fn installer(app: AppId) -> Option<i32> {
         return Some(2);
     };
     ely_platform::install::wait_for_exit(pid);
-    let installed = ely_platform::install::install(Path::new(dmg), Path::new(bundle));
+    let installed = ely_platform::install::install(std::path::Path::new(dmg), std::path::Path::new(bundle));
     if let Err(error) = &installed {
         // To the app's log; the reopened app shows it.
         eprintln!("update: the install failed: {error}");
@@ -117,7 +118,7 @@ pub fn installer(app: AppId) -> Option<i32> {
         }
     }
     // Last: the note is written before the app reads it.
-    if let Err(error) = ely_platform::install::reopen(Path::new(bundle)) {
+    if let Err(error) = ely_platform::install::reopen(std::path::Path::new(bundle)) {
         eprintln!("update: the app did not reopen: {error}");
         return Some(1);
     }
@@ -162,15 +163,17 @@ pub(crate) fn install(app: AppId, cx: &mut App) {
     }
 }
 
-/// This build's manifest in the newest release, or the test's.
-fn manifest(app: AppId) -> anyhow::Result<String> {
-    match std::env::var("ELY_UPDATE_MANIFEST") {
-        Ok(url) => Ok(url),
-        Err(_) => {
-            let name = format!("{}-{}.json", app.slug(), update::platform());
-            ely_platform::release::asset_url(LATEST, &name)
-        }
-    }
+/// This build's manifest and key, or the test's pair.
+fn manifest(app: AppId) -> anyhow::Result<(String, String)> {
+    let Ok(url) = std::env::var("ELY_UPDATE_MANIFEST") else {
+        return Ok((latest(app), update::KEY.to_string()));
+    };
+    let key = std::env::var("ELY_UPDATE_PUBLIC_KEY").map_err(|_| anyhow::anyhow!("ELY_UPDATE_MANIFEST needs ELY_UPDATE_PUBLIC_KEY"))?;
+    Ok((url, key))
+}
+
+fn latest(app: AppId) -> String {
+    format!("{LATEST}/{}-{}.json", app.slug(), update::platform())
 }
 
 impl Updates {
@@ -203,7 +206,7 @@ impl Updates {
         let current =
             semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("the build's version");
         // The lookup is a request too: off the window's thread.
-        let checked = cx.background_spawn(async move { manifest(app).and_then(|url| update::check(&current, &url)) });
+        let checked = cx.background_spawn(async move { manifest(app).and_then(|(url, key)| update::check(&current, &url, &key)) });
         cx.spawn(async move |this, cx| {
             let checked = checked.await;
             this.update(cx, |this, cx| this.checked(checked, asked, cx)).ok();

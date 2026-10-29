@@ -16,19 +16,25 @@ pub fn run<V: Render>(
     root: impl FnOnce(AppId, &mut Window, &mut App) -> Entity<V> + 'static,
 ) {
     // As the installer after an update, nothing else runs.
+    #[cfg(target_os = "macos")]
     if let Some(code) = crate::updates::installer(app) {
         std::process::exit(code);
     }
     let files = crate::opening::launch_args().unwrap_or_else(|error| startup::fail(app, &format!("a launch argument has no place: {error}")));
+    // Before any lock is taken in the old folder.
+    let (moved, admitted) = ely_platform::folder::at_start().unwrap_or_else(|error| startup::fail(app, &format!("the data folder is not ready: {error}")));
     // Before the log: a second copy must not trim it.
     let door = match ely_platform::instance::hold(app, &files) {
         Ok(Start::First(door)) => door,
         Ok(Start::Handed) => std::process::exit(0),
         Err(error) => startup::fail(app, &format!("{error}")),
     };
+    // Later starts wait until this lock is held.
+    drop(admitted);
     if let Err(error) = logging::init(app) {
         startup::fail(app, &format!("logging did not start: {error:#}"));
     }
+    moved.log();
     if let Err(error) = graphics::check() {
         startup::fail(app, &format!("{error:#}"));
     }
@@ -101,7 +107,7 @@ fn open<V: Render>(
         Err(error) => startup::fail(app, &format!("the window did not open: {error:#}")),
     };
     crate::tray::set_main(app, main, cx);
-    crate::opening::home(hands, cx);
+    crate::opening::home(app, hands, cx);
     // Settings alone would hold the lock yet open nothing.
     cx.on_window_closed(move |cx, closed| {
         if crate::tray::closed(closed, cx) {

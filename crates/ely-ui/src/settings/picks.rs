@@ -12,7 +12,7 @@ use ely_gpui_component::{
     buttons::SegmentedControl,
     forms::{Choice, Select},
 };
-use ely_platform::settings::{DOC_ZOOM, DOC_ZOOMS, DocZoom, UI_TEXT_SIZE, UI_TEXT_SIZES};
+use ely_platform::settings::{DOC_ZOOM, DOC_ZOOMS, DocZoom, Sides, TWO_SIDED, UI_TEXT_SIZE, UI_TEXT_SIZES, word};
 use gpui::{App, AsyncApp, Global};
 use serde_json::Value;
 
@@ -73,11 +73,25 @@ pub(super) fn doc_zoom(stored: DocZoom, cx: &App) -> Select {
     };
     let choices = std::iter::once(Choice::new("auto", text(cx, "settings.zoom.auto", &[])))
         .chain(DOC_ZOOMS.map(|percent| Choice::new(percent.to_string(), format!("{percent}%"))));
-    Select::new("settings-doc-zoom", choices).selected(shown).on_change(|picked, _, cx| {
+    Select::new("settings-doc-zoom", choices)
+        .label(text(cx, "settings.zoom", &[])).selected(shown).on_change(|picked, _, cx| {
         let zoom = match picked.as_ref() {
             "auto" => DocZoom::Auto,
             percent => DocZoom::Percent(percent.parse().expect("a zoom choice")),
         };
         pick(DOC_ZOOM, zoom.value(), cx)
     })
+}
+
+/// The sides the print dialog starts on.
+pub(super) fn two_sided(stored: Sides, cx: &App) -> Select {
+    let shown = match waiting(TWO_SIDED, cx) {
+        Some(Value::String(stored)) => stored,
+        _ => word(&Sides::ALL, &stored).to_string(),
+    };
+    let choices = Sides::ALL.map(|(_, stored)| Choice::new(stored, text(cx, &format!("settings.two_sided.{stored}"), &[])));
+    Select::new("settings-two-sided", choices)
+        .label(text(cx, "settings.two_sided", &[]))
+        .selected(shown)
+        .on_change(|picked, _, cx| pick(TWO_SIDED, Value::String(picked.to_string()), cx))
 }

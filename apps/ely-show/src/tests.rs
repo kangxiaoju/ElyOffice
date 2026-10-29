@@ -16,10 +16,15 @@ mod output;
 mod play;
 mod play_more;
 mod play_time;
+mod remote;
 mod review;
+mod sections;
 mod slides;
 mod strip;
 mod turn;
+// Atlas pictures; macOS draws surfaces on its main thread.
+#[cfg(not(target_os = "macos"))]
+mod video;
 
 /// An unrendered Deck over a fresh worker, if LOK exists.
 pub(super) fn deck(cx: &mut TestAppContext, dir: &Path) -> Option<Entity<Deck>> {

@@ -52,6 +52,8 @@ pub(super) fn spot(cx: &mut VisualTestContext, book: &Entity<Book>, column: u32,
 /// Right-clicks and waits until `shown` holds for the menu.
 fn right_click(cx: &mut VisualTestContext, book: &Entity<Book>, at: Point<Pixels>, shown: Shows) {
     cx.update(|_, app| book.update(app, |book, _| book.menu = None));
+    // Clicks hit the last frame, old popup included.
+    frames(cx);
     cx.simulate_mouse_move(at, None, Modifiers::none());
     cx.simulate_mouse_down(at, MouseButton::Right, Modifiers::none());
     cx.simulate_mouse_up(at, MouseButton::Right, Modifiers::none());
@@ -257,4 +259,20 @@ fn a_header_ends_shape_text_editing() {
     });
     let xml = std::fs::read_to_string(&path).expect("the save");
     assert_eq!(xml.matches(">z</text:p>").count(), 2, "each shape keeps its typed text");
+}
+
+#[test]
+fn format_cells_opens_a_folded_right_panel() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let Some((window, book)) = super::book(&mut cx, dir.path()) else {
+        eprintln!("SKIP: no LOK build");
+        return;
+    };
+    super::blank(&mut cx, &book);
+    let shown = |cx: &mut TestAppContext| cx.update(|app| ely_ui::settings::panels::shown(false, app));
+    cx.update(|app| ely_ui::settings::panels::show(false, false, app));
+    assert!(!shown(&mut cx), "folded");
+    window.update(&mut cx, |_, window, app| book.update(app, |book, cx| book.choose(Pick::Format, window, cx))).expect("the window lives");
+    assert!(shown(&mut cx), "Format Cells opens it");
 }

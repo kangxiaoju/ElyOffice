@@ -9,7 +9,11 @@ use crate::{status::State, tree::Tree};
 
 /// Steps, lets the watcher's timer pass, and redraws until `done`.
 pub(crate) fn settle(cx: &mut VisualTestContext, done: impl Fn(&App) -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    settle_within(cx, Duration::from_secs(10), done)
+}
+
+pub(crate) fn settle_within(cx: &mut VisualTestContext, wait: Duration, done: impl Fn(&App) -> bool) {
+    let deadline = Instant::now() + wait;
     while Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
         cx.executor().advance_clock(Duration::from_millis(300));
@@ -444,7 +448,7 @@ fn unstaging_right_after_a_first_commit_deletes_nothing() {
 }
 
 #[test]
-fn the_repository_menu_offers_only_what_this_platform_builds() {
+fn the_repository_menu_offers_every_tool() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let mut cx = TestAppContext::single();
     let (_tree, cx) = window(&mut cx, dir.path());
@@ -464,13 +468,8 @@ fn the_repository_menu_offers_only_what_this_platform_builds() {
         said(crate::tools::REVEAL),
         said("tree.clone"),
     );
-    assert_eq!(
-        names.contains(&terminal),
-        crate::tools::TERMINAL,
-        "{names:?}"
-    );
     assert!(
-        names.contains(&reveal) && names.contains(&clone),
+        names.contains(&terminal) && names.contains(&reveal) && names.contains(&clone),
         "{names:?}"
     );
 }

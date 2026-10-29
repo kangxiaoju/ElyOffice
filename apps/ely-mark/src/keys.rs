@@ -1,5 +1,6 @@
 //! Modes, menus and keys, as Typora's (MARK-01, MARK-02, MARK-15).
 
+use ely_gpui_component::secondary;
 use ely_ui::{commands, i18n::text};
 use gpui::{Action, App, Context, InteractiveElement as _, KeyBinding, Menu, MenuItem, actions};
 
@@ -13,16 +14,15 @@ actions!(
 pub fn bind(cx: &mut App) {
     let at = Some(commands::CONTEXT);
     cx.bind_keys([
-        KeyBinding::new("secondary-/", ToggleSource, at),
+        KeyBinding::new(secondary!("/"), ToggleSource, at),
         // Over the code editor's `//` toggle.
-        KeyBinding::new("secondary-/", ToggleSource, Some("ElyEditor")),
+        KeyBinding::new(secondary!("/"), ToggleSource, Some("ElyEditor")),
         KeyBinding::new("f8", crate::look::FocusMode, at),
-        KeyBinding::new("secondary-shift-l", crate::look::Sidebar, at),
         KeyBinding::new("f9", crate::look::Typewriter, at),
-        KeyBinding::new("secondary-+", crate::look::Larger, at),
-        KeyBinding::new("secondary-_", crate::look::Smaller, at),
-        KeyBinding::new("secondary-)", crate::look::ActualSize, at),
-        KeyBinding::new("secondary-f", ely_office::FindReplace, at),
+        KeyBinding::new(secondary!("+"), crate::look::Larger, at),
+        KeyBinding::new(secondary!("_"), crate::look::Smaller, at),
+        KeyBinding::new(secondary!(")"), crate::look::ActualSize, at),
+        KeyBinding::new(secondary!("f"), ely_office::FindReplace, at),
     ]);
     // Windows' Chinese input keeps Ctrl+Shift+0 for itself.
     #[cfg(target_os = "windows")]
@@ -74,7 +74,7 @@ pub fn menus(look: &crate::look::Look, cx: &App) -> Vec<Menu> {
             MenuItem::action(label(Mode::Source, cx), SourceMode),
             MenuItem::action(label(Mode::Preview, cx), PreviewMode),
             MenuItem::separator(),
-            checked("mark.look.side", Box::new(look::Sidebar), look.side),
+            ely_ui::commands::left_panel_item(cx),
             checked("mark.look.focus", Box::new(look::FocusMode), look.focus),
             checked(
                 "mark.look.typewriter",

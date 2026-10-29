@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use ely_gpui_component::mail::Mail as Row;
 use ely_mail_engine::{AccountId, Fetched, Filter, Key, MailboxId, Role, Store};
 use gpui::{
-    Entity, ScrollDelta, ScrollWheelEvent, SharedString, TestAppContext, VisualTestContext, point,
+    Entity, ScrollDelta, ScrollEvent, SharedString, TestAppContext, VisualTestContext, point,
     px, size,
 };
 
@@ -250,7 +250,7 @@ fn the_side_scrolls_past_many_folders_to_the_next_account() {
     assert!(before.bottom() > height, "the side fits the window");
     let at = point(px(100.), height / 2.0);
     for _ in 0..20 {
-        cx.simulate_event(ScrollWheelEvent {
+        cx.simulate_event(ScrollEvent {
             position: at,
             delta: ScrollDelta::Pixels(point(px(0.), px(-1000.))),
             ..Default::default()
@@ -262,4 +262,38 @@ fn the_side_scrolls_past_many_folders_to_the_next_account() {
         after.bottom() <= height,
         "Bob's settings are out of reach: {after:?}"
     );
+}
+
+#[test]
+fn the_divider_keeps_its_place_when_the_window_opens_again() {
+    use gpui::{Modifiers, MouseButton};
+    let dir = tempfile::tempdir().unwrap();
+    seeded(dir.path());
+    let mut cx = TestAppContext::single();
+    let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+    cx.simulate_resize(size(px(1100.), px(800.)));
+    settle(cx, |_| true);
+    let list = cx.debug_bounds("mail-list-pane").expect("the list");
+    // The divider's grab area starts at the list's edge.
+    let grip = point(list.right() + px(2.), list.center().y);
+    cx.simulate_mouse_down(grip, MouseButton::Left, Modifiers::none());
+    // Starts the drag, sets its anchor, then moves.
+    for x in [10., 20., 170.] {
+        cx.simulate_mouse_move(grip + point(px(x), px(0.)), MouseButton::Left, Modifiers::none());
+    }
+    cx.simulate_mouse_up(grip + point(px(170.), px(0.)), MouseButton::Left, Modifiers::none());
+    // The second draws what the first asked for.
+    settle(cx, |_| true);
+    settle(cx, |_| true);
+    let wide = cx.debug_bounds("mail-list-pane").expect("the list").size.width;
+    assert!(wide > list.size.width + px(100.), "the drag widens the list: {list:?} to {wide:?}");
+    // As the tray: a new window around the same mail.
+    let again = cx.update(|_, app| app.open_window(gpui::WindowOptions::default(), |_, _| mail.clone())).unwrap();
+    cx.update(|window, _| window.remove_window());
+    let mut cx = VisualTestContext::from_window(again.into(), cx);
+    cx.simulate_resize(size(px(1100.), px(800.)));
+    settle(&mut cx, |_| true);
+    settle(&mut cx, |_| true);
+    let kept = cx.debug_bounds("mail-list-pane").expect("the list").size.width;
+    assert!((kept - wide).abs() < px(2.), "the list keeps its width: {wide:?} then {kept:?}");
 }

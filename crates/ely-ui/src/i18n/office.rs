@@ -70,6 +70,16 @@ pub(super) const EN: &[(&str, &str)] = &[
     ("office.state.risk", "Risk mode"),
     ("office.state.signed", "Signed"),
     ("office.state.repaired", "Repaired copy"),
+    ("office.state.sections", "Has sections"),
+    ("office.state.sealed", "Sections unchecked"),
+    (
+        "office.sealed",
+        "{name} is encrypted, so Ely cannot see whether it has slide sections, which Ely cannot keep. Save As writes a {formats} copy; the original stays as it is.",
+    ),
+    (
+        "office.sections",
+        "{name} has slide sections, which Ely cannot keep. Save As writes a {formats} copy without them; the original keeps its sections.",
+    ),
     (
         "office.repaired",
         "{name} is damaged. Ely opened a repaired copy; Save As writes it to a new file and the damaged original stays as it is.",
@@ -90,6 +100,9 @@ pub(super) const EN: &[(&str, &str)] = &[
     ("office.untitled", "Untitled {n}"),
     ("office.props.automatic", "Automatic"),
     ("office.props.mixed", "Mixed"),
+    ("office.view.text", "Document"),
+    ("office.view.sheet", "Spreadsheet"),
+    ("office.view.deck", "Presentation"),
     ("office.chart.insert_title", "Insert Chart"),
     ("office.chart.edit_title", "Edit Chart"),
     ("office.chart.kind", "Type"),
@@ -156,6 +169,16 @@ pub(super) const ZH_CN: &[(&str, &str)] = &[
     ("office.state.risk", "风险模式"),
     ("office.state.signed", "已签名"),
     ("office.state.repaired", "修复的副本"),
+    ("office.state.sections", "含章节"),
+    ("office.state.sealed", "章节未查"),
+    (
+        "office.sealed",
+        "{name} 已加密，Ely 看不到其中有无幻灯片章节，而章节 Ely 无法保留。“另存为”写出 {formats} 副本；原文件保持原样。",
+    ),
+    (
+        "office.sections",
+        "{name} 含幻灯片章节，Ely 无法保留。“另存为”写出不含章节的 {formats} 副本；原文件的章节照旧。",
+    ),
     (
         "office.repaired",
         "{name} 已损坏。Ely 打开的是修复后的副本；“另存为”把它写成新文件，损坏的原件保持原样。",
@@ -173,6 +196,9 @@ pub(super) const ZH_CN: &[(&str, &str)] = &[
     ("office.untitled", "未命名 {n}"),
     ("office.props.automatic", "自动"),
     ("office.props.mixed", "混合"),
+    ("office.view.text", "文档"),
+    ("office.view.sheet", "电子表格"),
+    ("office.view.deck", "演示文稿"),
     ("office.chart.insert_title", "插入图表"),
     ("office.chart.edit_title", "编辑图表"),
     ("office.chart.kind", "类型"),

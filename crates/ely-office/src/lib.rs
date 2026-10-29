@@ -12,6 +12,7 @@ pub mod lok;
 pub mod menu;
 mod open;
 mod recover;
+pub mod remote;
 pub mod panel;
 mod save;
 mod stopped;
@@ -42,6 +43,7 @@ pub use find::{FindReplace, Finder, Finding};
 pub use lok::{Commands, Lok, start};
 pub use open::{Opening, Source};
 pub use recover::{Keeping, Recovering};
+pub use remote::Remote;
 pub use stopped::{Stopped, Stopping};
 pub use save::{Saving, folder};
 pub use undo::{Redo, Undo, Undoing, bind_undo_keys, undo_able, undo_items};
@@ -49,7 +51,7 @@ pub use zoom::{ActualSize, ZoomIn, ZoomOut, Zooming, bind_zoom_keys, zoom_items}
 
 /// Every shared trait, for `use ely_office::prelude::*`.
 pub mod prelude {
-    pub use crate::{Chrome, Closing, Commands, Dialogs, Finding, Host, Opening, Saving, Stopping, Tabs, Undoing, Zooming};
+    pub use crate::{Chrome, Closing, Commands, Dialogs, Finding, Host, Opening, Remote, Saving, Stopping, Tabs, Undoing, Zooming};
 }
 
 /// What one app opens and writes.
@@ -108,6 +110,10 @@ pub enum Risk {
     Signed,
     /// A damaged file opened through a repaired copy (PDF-14).
     Repaired,
+    /// PPTX slide sections the kernel drops (D-02).
+    Sections,
+    /// An encrypted PPTX whose sections Ely cannot see.
+    Sealed,
 }
 
 /// One open document.
@@ -146,6 +152,8 @@ impl<E, G: Engine> Tab<E, G> {
             _ if self.risk == Some(Risk::Macros) => "office.state.risk",
             _ if self.risk == Some(Risk::Signed) => "office.state.signed",
             _ if self.risk == Some(Risk::Repaired) => "office.state.repaired",
+            _ if self.risk == Some(Risk::Sections) => "office.state.sections",
+            _ if self.risk == Some(Risk::Sealed) => "office.state.sealed",
             _ if self.exporting => "office.state.saving",
             SaveState::Saving => "office.state.saving",
             SaveState::ExternalModified => "office.state.external",
@@ -191,6 +199,8 @@ pub struct Core<H: Host> {
     pub stopped: Option<Stopped>,
     /// Edit counts at the last autosave look, per tab.
     pub quiet: std::collections::HashMap<u64, u64>,
+    /// Other programs' saves, answered as each ends.
+    pub saving: Vec<(u64, ely_ui::Ask)>,
 }
 
 impl<H: Host> Core<H> {
@@ -216,6 +226,7 @@ impl<H: Host> Core<H> {
             recovery_off: None,
             stopped: None,
             quiet: Default::default(),
+            saving: Vec::new(),
         }
     }
 }
@@ -246,9 +257,10 @@ pub fn in_window<H: Host, R>(
 
 /// Opens the print panel after GPUI releases the app.
 pub fn print_later<H: Tabs>(pdf: std::path::PathBuf, cx: &mut Context<H>) {
+    let sides = ely_ui::settings::current(cx).two_sided;
     // The panel's modal loop calls back into GPUI.
     cx.spawn(async move |this, cx| {
-        let printed = ely_platform::print::print_pdf(&pdf).await;
+        let printed = ely_platform::print::print_pdf(&pdf, sides).await;
         // The copy may hold what a password guarded.
         if let Err(error) = std::fs::remove_file(&pdf) {
             log::error!("office: the print copy {} stays: {error}", pdf.display());

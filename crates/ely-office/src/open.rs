@@ -169,7 +169,7 @@ pub trait Opening: Host {
         let opened = loaded.and_then(|loaded| {
             let risk = match files::macro_risk(&Self::KIND, &path)? {
                 true => Some(crate::Risk::Macros),
-                false => Self::Engine::risk(&loaded),
+                false => files::section_risk(&Self::KIND, &path)?.or_else(|| Self::Engine::risk(&loaded)),
             };
             let (work, session) = match registry {
                 Some(_) => (
@@ -213,7 +213,9 @@ pub trait Opening: Host {
         );
         self.watch(id, &view, cx);
         window.focus(&Self::Engine::focus(view.read(cx)), cx);
-        self.core_mut().tabs.push(Tab {
+        // Tabs keep the order their loads began.
+        let at = self.core().tabs.partition_point(|tab| tab.id < id);
+        self.core_mut().tabs.insert(at, Tab {
             id,
             view,
             doc,

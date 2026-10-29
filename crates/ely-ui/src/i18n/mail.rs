@@ -86,6 +86,16 @@ pub(super) const EN: &[(&str, &str)] = &[
     ),
     ("mail.icloud.open", "Open Apple Account"),
     ("mail.icloud.password", "App-specific password"),
+    (
+        "mail.gmail.steps",
+        "Gmail needs an app password: turn on 2-Step Verification in your Google Account, open App passwords, make one and paste it below. If there is no App passwords page, Google may not offer them to this account, for example when 2-Step Verification is off or uses only security keys, the account is in Advanced Protection, or a work or school admin has turned them off.",
+    ),
+    (
+        "mail.gmail.refused",
+        "Google refused the password. Paste the 16-letter app password, not your Google password. If Google offers this account no app passwords, ElyMail cannot reach it until that changes.",
+    ),
+    ("mail.gmail.open", "Open Google Account"),
+    ("mail.gmail.password", "App password"),
     ("mail.add.check", "Check"),
     ("mail.add.sign_in", "Sign In with {method}"),
     ("mail.add.save", "Add Account"),
@@ -102,10 +112,6 @@ pub(super) const EN: &[(&str, &str)] = &[
     ("mail.add.bad_port", "{port} is not a port; use 1 to 65535."),
     ("mail.add.invalid", "These settings cannot be used: {error}"),
     ("mail.add.taken", "{address} is already added."),
-    (
-        "mail.add.unavailable.google",
-        "Gmail sign-in is not in this build: it was built without a Google client ID.",
-    ),
     (
         "mail.add.unavailable.microsoft",
         "Microsoft sign-in is not in this build: it was built without a Microsoft client ID.",
@@ -126,6 +132,10 @@ pub(super) const EN: &[(&str, &str)] = &[
     (
         "mail.error.rejected",
         "the server refused the sign-in: {detail}",
+    ),
+    (
+        "mail.error.outlook_held",
+        "Outlook took the sign-in but would not open the mailbox ({detail}). Outlook.com holds some accounts like this, and other mail apps fail the same way. Sign in once at outlook.live.com, finish any check it asks for, then try again",
     ),
     ("mail.error.server", "the server refused: {detail}"),
     (
@@ -294,6 +304,16 @@ pub(super) const ZH_CN: &[(&str, &str)] = &[
     ),
     ("mail.icloud.open", "打开 Apple 账户"),
     ("mail.icloud.password", "应用专用密码"),
+    (
+        "mail.gmail.steps",
+        "Gmail 须用应用专用密码：先在 Google 账号里开启两步验证，打开“应用专用密码”，生成一个，粘贴到下面。找不到“应用专用密码”页，可能是 Google 不给这个账号开放，例如两步验证未开或只用安全密钥、账号加入了高级保护计划，或工作、学校的管理员关了它。",
+    ),
+    (
+        "mail.gmail.refused",
+        "Google 拒绝了这个密码。请粘贴 16 位的应用专用密码，不是 Google 账号的密码。若 Google 不给这个账号应用专用密码，在此改变之前 ElyMail 连不上它。",
+    ),
+    ("mail.gmail.open", "打开 Google 账号"),
+    ("mail.gmail.password", "应用专用密码"),
     ("mail.add.check", "检查"),
     ("mail.add.sign_in", "以 {method} 登录"),
     ("mail.add.save", "添加账号"),
@@ -311,10 +331,6 @@ pub(super) const ZH_CN: &[(&str, &str)] = &[
     ("mail.add.invalid", "这些设置用不了：{error}"),
     ("mail.add.taken", "{address} 已经添加过。"),
     (
-        "mail.add.unavailable.google",
-        "本构建没有 Gmail 登录：构建时未带 Google 客户端 ID。",
-    ),
-    (
         "mail.add.unavailable.microsoft",
         "本构建没有 Microsoft 登录：构建时未带 Microsoft 客户端 ID。",
     ),
@@ -329,6 +345,10 @@ pub(super) const ZH_CN: &[(&str, &str)] = &[
     ("mail.error.connect", "连不上（{detail}）"),
     ("mail.error.tls_failed", "安全连接失败（{detail}）"),
     ("mail.error.rejected", "服务器拒绝登录：{detail}"),
+    (
+        "mail.error.outlook_held",
+        "Outlook 接受了登录，却不肯打开邮箱（{detail}）。Outlook.com 会这样扣住部分账号，其他邮件应用同样失败。请在 outlook.live.com 登录一次，完成它要求的验证，再试",
+    ),
     ("mail.error.server", "服务器拒绝：{detail}"),
     ("mail.error.protocol", "读不懂服务器的回复：{detail}"),
     ("mail.error.timeout", "{detail}时没有回应"),

@@ -153,8 +153,9 @@ fn a_kernel_write_failure_stays_visible() {
     let id = blank(&mut cx, &docs);
     type_into(&mut cx, &docs, "RetainedText");
     let work = cx.update(|app| docs.read(app).active_tab().expect("a tab").work.clone());
-    std::fs::remove_dir_all(&work).expect("drops the scratch");
-    std::fs::write(&work, b"not a folder").expect("blocks it");
+    // A folder where the kernel writes its copy.
+    let block = work.join("save.docx");
+    std::fs::create_dir(&block).expect("blocks the copy");
     let target = dir.path().join("failure.docx");
     with_window(&mut cx, &docs, |docs, window, cx| {
         docs.write_as(id, target.clone(), None, window, cx)
@@ -164,8 +165,7 @@ fn a_kernel_write_failure_stays_visible() {
         !tab.exporting && tab.session.state() == ely_files::SaveState::SaveFailed
     });
     assert!(!target.exists(), "the failure writes nothing");
-    std::fs::remove_file(&work).expect("unblocks");
-    std::fs::create_dir_all(&work).expect("the scratch returns");
+    std::fs::remove_dir(&block).expect("unblocks");
     with_window(&mut cx, &docs, |docs, window, cx| {
         docs.write_as(id, target.clone(), None, window, cx)
     });
@@ -311,14 +311,20 @@ fn the_side_panel_hides_and_review_brings_it_back() {
         return;
     };
     blank(&mut cx, &docs);
-    let shown = |cx: &mut TestAppContext| cx.update(|app| docs.update(app, |docs, cx| docs.side_view(cx).is_some()));
+    let shown = |cx: &mut TestAppContext| {
+        cx.update(|app| docs.update(app, |docs, cx| docs.side_view(cx).is_some() && ely_ui::settings::panels::shown(false, cx)))
+    };
+    let fold = |cx: &mut TestAppContext| {
+        with_window(cx, &docs, |_, window, cx| window.dispatch_action(Box::new(ely_ui::commands::ToggleRightPanel), cx));
+        cx.run_until_parked();
+    };
     assert!(shown(&mut cx), "open at first");
-    with_window(&mut cx, &docs, |docs, window, cx| docs.on_side_panel(&crate::docs::ToggleSidePanel, window, cx));
+    fold(&mut cx);
     assert!(!shown(&mut cx), "hidden");
     with_window(&mut cx, &docs, |docs, window, cx| docs.on_show_review(&crate::review::ShowReview, window, cx));
     assert!(shown(&mut cx), "review opens it");
     assert_eq!(cx.update(|app| docs.read(app).side), crate::docs::Side::Review);
-    with_window(&mut cx, &docs, |docs, window, cx| docs.on_side_panel(&crate::docs::ToggleSidePanel, window, cx));
+    fold(&mut cx);
     with_window(&mut cx, &docs, |docs, window, cx| docs.on_show_review(&crate::review::ShowReview, window, cx));
     assert_eq!(cx.update(|app| docs.read(app).side), crate::docs::Side::Review, "a hidden review comes back as review");
     assert!(shown(&mut cx));

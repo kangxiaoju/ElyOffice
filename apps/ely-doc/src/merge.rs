@@ -27,7 +27,7 @@ pub fn menu(cx: &gpui::App) -> gpui::Menu {
         gpui::MenuItem::action(label("office.find.open"), ely_office::FindReplace),
         gpui::MenuItem::action(label("doc.merge.open"), MailMerge),
         gpui::MenuItem::separator(),
-        gpui::MenuItem::action(label("doc.nav.open"), crate::navigate::ToggleNavigator),
+        gpui::MenuItem::action(label("doc.nav.open"), ely_ui::commands::ToggleLeftPanel),
         gpui::MenuItem::action(label("doc.nav.back"), crate::navigate::GoBack),
     ])
 }
@@ -155,6 +155,7 @@ impl Render for Merge {
         let record = {
             let this = this.clone();
             NumberInput::new("doc-merge-record", self.record as f64)
+                .label(text("doc.merge.record"))
                 .range(1.0, table.rows.len() as f64)
                 .on_commit(move |value, _, cx| {
                     this.update(cx, |merge, cx| {

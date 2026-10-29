@@ -166,7 +166,9 @@ impl Worker {
             .arg(profile_dir)
             .env("SAL_FORCE_HIDPI_SCALING", "1")
             // A killed worker's profile lock would hang the next.
-            .env("SAL_NOLOCK_PROFILE", "1");
+            .env("SAL_NOLOCK_PROFILE", "1")
+            // The kernel's OpenCL test can hang in AMD's driver.
+            .env("SAL_DISABLE_OPENCL", "1");
         // Linux tiles via cairo are BGRA; Skia there is RGBA.
         match cfg!(target_os = "linux") {
             true => command.env("SAL_DISABLESKIA", "1"),
@@ -174,6 +176,8 @@ impl Worker {
         };
         // Calc reports in document twips; unipoll lends LOK's loop.
         command.env("SAL_LOK_OPTIONS", "unipoll:sc_print_twips_msgs");
+        // LOK spells no language off this list.
+        command.env("LOK_ALLOWLIST_LANGUAGES", "en");
         if dev {
             command.arg("--dev");
         }
@@ -182,7 +186,8 @@ impl Worker {
         }
         let temp = profile_dir.join("tmp");
         std::fs::create_dir_all(&temp)?;
-        command.env("TMPDIR", &temp);
+        // Unix reads TMPDIR; Windows reads TMP, then TEMP.
+        command.env("TMPDIR", &temp).env("TMP", &temp).env("TEMP", &temp);
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

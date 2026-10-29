@@ -11,7 +11,7 @@ use ely_gpui_component::{
 };
 use ely_office::prelude::*;
 use gpui::{
-    AnyElement, App, AppContext as _, Context, IntoElement as _, ParentElement as _, SharedString,
+    AnyElement, App, AppContext as _, Context, Focusable as _, IntoElement as _, ParentElement as _, SharedString,
     Styled as _, Window, actions, div, rems,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,6 @@ actions!(
     mark,
     [
         FocusMode,
-        Sidebar,
         Typewriter,
         LineNumbers,
         Narrow,
@@ -60,9 +59,6 @@ pub enum Font {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Look {
     pub focus: bool,
-    /// The left side shows.
-    #[serde(default = "shown")]
-    pub side: bool,
     pub typewriter: bool,
     pub width: Width,
     pub font: Font,
@@ -81,7 +77,6 @@ impl Default for Look {
     fn default() -> Self {
         Look {
             focus: false,
-            side: true,
             typewriter: false,
             width: Width::Medium,
             font: Font::Sans,
@@ -191,9 +186,6 @@ impl Desk {
             .on_action(cx.listener(|desk, _: &FocusMode, _, cx| {
                 desk.relook(|look| look.focus = !look.focus, cx)
             }))
-            .on_action(cx.listener(|desk, _: &Sidebar, _, cx| {
-                desk.relook(|look| look.side = !look.side, cx)
-            }))
             .on_action(cx.listener(|desk, _: &Typewriter, _, cx| {
                 desk.relook(|look| look.typewriter = !look.typewriter, cx)
             }))
@@ -269,6 +261,7 @@ impl Desk {
         let title = ely_ui::i18n::text(cx, "mark.look.other.title", &[]);
         let cancel = ely_office::cancel(cx);
         let dialog = Dialog::new("mark-font-dialog", title, close)
+            .focus_first(field.read(cx).focus_handle(cx))
             .child(div().w_full().child(picker))
             .action(move |close| {
                 closer.replace(Some(close.clone()));
@@ -285,7 +278,7 @@ pub(crate) mod font_tests;
 mod tests {
     use ely_gpui_component::documents::DocumentLook;
     use gpui::{
-        Entity, Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point,
+        Entity, Modifiers, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point,
         rems,
     };
 
@@ -368,7 +361,6 @@ mod tests {
         let look = super::load(&file).expect("it reads");
         assert!(look.focus);
         assert!(look.line_numbers, "looks kept before numbers show them");
-        assert!(look.side, "looks kept before the side fold show it");
         assert_eq!(
             (look.width, look.font, look.size),
             (super::Width::Wide, super::Font::Serif, 120)
@@ -404,7 +396,7 @@ mod tests {
         let focus = desk.read_with(cx, |desk, _| desk.core.focus.clone());
         cx.update(|window, cx| window.focus(&focus, cx));
         let at = cx.update(|window, _| window.viewport_size()).center();
-        let wheel = |modifiers, y| ScrollWheelEvent {
+        let wheel = |modifiers, y| ScrollEvent {
             position: at,
             delta: ScrollDelta::Lines(point(0.0, y)),
             modifiers,
@@ -427,11 +419,12 @@ mod tests {
             1.0,
             "only Ctrl, or Cmd on macOS"
         );
-        cx.simulate_event(wheel(Modifiers::secondary_key(), 3.0));
+        let secondary = cx.update(|_, cx| Modifiers::secondary_key(cx));
+        cx.simulate_event(wheel(secondary, 3.0));
         cx.run_until_parked();
         assert_eq!(document_look(&desk, cx).scale, 1.1, "a notch is one step");
-        cx.simulate_event(wheel(Modifiers::secondary_key(), -1.0));
-        cx.simulate_event(wheel(Modifiers::secondary_key(), -1.0));
+        cx.simulate_event(wheel(secondary, -1.0));
+        cx.simulate_event(wheel(secondary, -1.0));
         cx.run_until_parked();
         assert_eq!(document_look(&desk, cx).scale, 0.9);
     }
