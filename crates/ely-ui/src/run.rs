@@ -18,10 +18,20 @@ use crate::theme;
 /// `ely_gpui_component::init` nor installs a theme. It opens no window and
 /// installs no tray, updater or quit handling. Call once before embedding.
 pub fn embed_init(app: AppId, cx: &mut App) {
+    if cx.has_global::<Embedded>() {
+        return;
+    }
     crate::settings::install(app, cx);
     crate::i18n::install(cx);
     crate::commands::bind_keys(cx);
+    cx.set_global(Embedded);
 }
+
+/// Marks that [`embed_init`] has run, so a host may call it once per embed
+/// without reinstalling settings, catalogs or key bindings.
+pub struct Embedded;
+
+impl gpui::Global for Embedded {}
 
 /// Starts `app`; `ELY_SMOKE=1` draws a frame, `hold` stays up.
 pub fn run<V: Render>(

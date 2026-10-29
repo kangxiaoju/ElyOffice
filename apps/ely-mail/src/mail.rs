@@ -168,6 +168,10 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
 /// Unlike [`open`], no tray, quit guard or launch-file handoff is installed:
 /// the host decides the window's lifecycle.
 pub fn embed(dir: &Path, window: &mut Window, cx: &mut App) -> Entity<Mail> {
+    // A host that is not ElyMail's own `run` has none of ely_ui's globals; the
+    // message catalogs must be in place before the view reads any text.
+    // `embed_init` installs them once and is a no-op on later calls.
+    ely_ui::embed_init(AppId::Mail, cx);
     let parts = Parts::system(dir);
     cx.new(|cx| {
         let mut mail = Mail::new(parts, window, cx);
