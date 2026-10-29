@@ -10,6 +10,19 @@ use gpui::{
 
 use crate::theme;
 
+/// Installs the globals an embedded Ely view needs when a host app, not
+/// [`run`], owns the process: shared settings and the message catalogs that
+/// [`crate::i18n::text`] reads.
+///
+/// The host keeps its own components and theme: this neither calls
+/// `ely_gpui_component::init` nor installs a theme. It opens no window and
+/// installs no tray, updater or quit handling. Call once before embedding.
+pub fn embed_init(app: AppId, cx: &mut App) {
+    crate::settings::install(app, cx);
+    crate::i18n::install(cx);
+    crate::commands::bind_keys(cx);
+}
+
 /// Starts `app`; `ELY_SMOKE=1` draws a frame, `hold` stays up.
 pub fn run<V: Render>(
     app: AppId,

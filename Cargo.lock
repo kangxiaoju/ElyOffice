@@ -2109,6 +2109,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ely-embed"
+version = "0.1.12"
+dependencies = [
+ "ely-gpui-component",
+ "ely-lok",
+ "ely-pdf-engine",
+ "gpui-pre",
+ "tempfile",
+]
+
+[[package]]
 name = "ely-files"
 version = "0.1.1"
 source = "git+https://github.com/ELY-Open-Source/Ely-GPUI-Components?rev=39f1cd234aabdd2058e52549ae99457f42f86d61#39f1cd234aabdd2058e52549ae99457f42f86d61"

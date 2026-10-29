@@ -268,10 +268,13 @@ impl Render for Mail {
                 text(cx, "mail.store.read_only", &[("error", reason)]),
             )
         });
-        let shell = Shell::new(AppId::Mail.name(), &self.focus)
+        let mut shell = Shell::new(AppId::Mail.name(), &self.focus)
             .left(left)
             .children(read_only)
             .child(self.body(window, cx));
+        if self.embedded {
+            shell = shell.bare();
+        }
         div()
             .size_full()
             .key_context(menu::CONTEXT)

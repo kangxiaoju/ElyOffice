@@ -126,6 +126,8 @@ pub struct Mail {
     /// Asked once, the quit goes on.
     pub quit_anyway: bool,
     pub focus: FocusHandle,
+    /// Hosted inside another app's tab: the view draws without window chrome.
+    pub embedded: bool,
     pub root: WeakEntity<Root>,
     pub side: Entity<Side>,
 }
@@ -157,6 +159,21 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
         log::warn!("mail: no tray, so closing the window quits: {error:#}");
     }
     root
+}
+
+/// Builds the mail view for a host app's tab. The host owns the window and its
+/// chrome; this draws only mail's content and side panel. `dir` holds the
+/// account store, vault and working copies, as [`Parts::system`] lays out.
+///
+/// Unlike [`open`], no tray, quit guard or launch-file handoff is installed:
+/// the host decides the window's lifecycle.
+pub fn embed(dir: &Path, window: &mut Window, cx: &mut App) -> Entity<Mail> {
+    let parts = Parts::system(dir);
+    cx.new(|cx| {
+        let mut mail = Mail::new(parts, window, cx);
+        mail.embedded = true;
+        mail
+    })
 }
 
 const TRAY_PNG: &[u8] = include_bytes!("../../../assets/icons/ely-mail.png");
@@ -248,6 +265,7 @@ impl Mail {
             quitting: false,
             quit_anyway: false,
             focus: cx.focus_handle(),
+            embedded: false,
             root: WeakEntity::new_invalid(),
             side: cx.new(|_| Side::new(this)),
         };

@@ -35,6 +35,8 @@ pub struct Shell {
     status: Option<StatusBar>,
     page: Option<ElementId>,
     main: bool,
+    /// Embedded in another app's tab: no window header at all.
+    bare: bool,
     body: Vec<AnyElement>,
 }
 
@@ -49,12 +51,21 @@ impl Shell {
             status: None,
             page: None,
             main: true,
+            bare: false,
             body: Vec::new(),
         }
     }
 
     /// Beside the main window: no menus, no update banner.
     pub fn secondary(mut self) -> Self {
+        self.main = false;
+        self
+    }
+
+    /// Embedded in a host app's tab: drops the window title bar, menus and
+    /// update banner, so only the content and panels draw.
+    pub fn bare(mut self) -> Self {
+        self.bare = true;
         self.main = false;
         self
     }
@@ -131,17 +142,19 @@ impl RenderOnce for Shell {
             }
             None => content.into_any_element(),
         };
-        let header = div()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .debug_selector(|| "shell-title".into())
-                    .child(TitleBar::new("titlebar").title(self.title)),
-            )
-            .children(self.main.then(|| crate::updates::updater(cx)).flatten())
-            .children(self.main.then(|| menu_bar(cx)).flatten())
-            .children(self.tabs);
+        let header = (!self.bare).then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .debug_selector(|| "shell-title".into())
+                        .child(TitleBar::new("titlebar").title(self.title)),
+                )
+                .children(self.main.then(|| crate::updates::updater(cx)).flatten())
+                .children(self.main.then(|| menu_bar(cx)).flatten())
+                .children(self.tabs)
+        });
         let shown = |left| crate::settings::panels::shown(left, cx);
         let (left_view, right_view) = (self.left.filter(|_| shown(true)), self.right.filter(|_| shown(false)));
         // Panels give way so the content keeps its room.
@@ -157,9 +170,12 @@ impl RenderOnce for Shell {
         panel::budget(&mut drawn_left, &mut drawn_right, window, cx);
         let row = div().flex_1().min_h_0().flex().child(content).child(SidePanel::new(Side::Right, drawn_right));
         let frame = AppShell::new()
-            .title_bar(header)
             .sidebar(SidePanel::new(Side::Left, drawn_left))
             .child(row);
+        let frame = match header {
+            Some(header) => frame.title_bar(header),
+            None => frame,
+        };
         let frame = match self.status {
             Some(bar) => frame.status_bar(bar),
             None => frame,
