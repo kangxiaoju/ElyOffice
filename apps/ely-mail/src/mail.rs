@@ -352,6 +352,11 @@ impl Mail {
         self.open_box(Open::Inboxes, cx);
     }
 
+    /// Stops hosted background work before the host drops this runtime.
+    pub fn shutdown(&mut self, cx: &mut Context<Self>) {
+        self.set_paused(true, cx);
+    }
+
     /// Redraws the window and its account list.
     pub fn notify(&self, cx: &mut Context<Self>) {
         self.side.update(cx, |_, cx| cx.notify());
