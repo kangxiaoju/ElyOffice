@@ -33,6 +33,14 @@ use crate::{
 /// Opens a file in its app.
 pub type Opener = Arc<dyn Fn(&Path) -> std::io::Result<()> + Send + Sync>;
 
+/// A new-mail notice emitted to a host embedding Mail.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MailNotice {
+    pub tag: SharedString,
+    pub title: SharedString,
+    pub body: SharedString,
+}
+
 /// What the engine runs on and keeps to.
 pub struct Parts {
     pub store: Result<Store, String>,
@@ -128,6 +136,8 @@ pub struct Mail {
     pub focus: FocusHandle,
     /// Hosted inside another app's tab: the view draws without window chrome.
     pub embedded: bool,
+    /// Embedding hosts receive notices here instead of ElyMail posting them directly.
+    pub host_notices: bool,
     pub root: WeakEntity<Root>,
     pub side: Entity<Side>,
 }
@@ -150,11 +160,19 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
     mail.update(cx, |mail, cx| mail.take_files(files, cx));
     let handed = mail.downgrade();
     ely_ui::on_open(cx, move |path, cx| {
-        handed.update(cx, |mail, cx| mail.take_files(vec![path], cx)).ok();
+        handed
+            .update(cx, |mail, cx| mail.take_files(vec![path], cx))
+            .ok();
     });
     // Closing the window leaves sync and the Outbox running.
     let kept = mail.clone();
-    let tray = ely_ui::tray::keep(app, TRAY_PNG, "envelope", move |window, cx| attach(app, &kept, true, window, cx), cx);
+    let tray = ely_ui::tray::keep(
+        app,
+        TRAY_PNG,
+        "envelope",
+        move |window, cx| attach(app, &kept, true, window, cx),
+        cx,
+    );
     if let Err(error) = tray {
         log::warn!("mail: no tray, so closing the window quits: {error:#}");
     }
@@ -180,10 +198,24 @@ pub fn embed(dir: &Path, window: &mut Window, cx: &mut App) -> Entity<Mail> {
     })
 }
 
+/// Creates one host-owned Mail runtime. The host may render this same entity in
+/// a tab, but closing the tab must not drop the entity.
+pub fn host(dir: &Path, window: &mut Window, cx: &mut App) -> Entity<Mail> {
+    let mail = embed(dir, window, cx);
+    mail.update(cx, |mail, _| mail.host_notices = true);
+    mail
+}
+
 const TRAY_PNG: &[u8] = include_bytes!("../../../assets/icons/ely-mail.png");
 
 /// The window's root around `mail`; `again` from the tray.
-fn attach(app: AppId, mail: &Entity<Mail>, again: bool, window: &mut Window, cx: &mut App) -> Entity<Root> {
+fn attach(
+    app: AppId,
+    mail: &Entity<Mail>,
+    again: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> Entity<Root> {
     let root = ely_ui::tool_root(app, mail.clone().into(), crate::menu::menus(cx), window, cx);
     mail.update(cx, |mail, cx| {
         if again {
@@ -270,6 +302,7 @@ impl Mail {
             quit_anyway: false,
             focus: cx.focus_handle(),
             embedded: false,
+            host_notices: false,
             root: WeakEntity::new_invalid(),
             side: cx.new(|_| Side::new(this)),
         };
@@ -310,6 +343,13 @@ impl Mail {
             Some(Ok(accounts)) => accounts,
             _ => &[],
         }
+    }
+
+    /// Opens the unified inbox and clears search/filter state.
+    pub fn open_inboxes(&mut self, cx: &mut Context<Self>) {
+        self.stop_seeking(cx);
+        self.filter = Filter::default();
+        self.open_box(Open::Inboxes, cx);
     }
 
     /// Redraws the window and its account list.
@@ -395,3 +435,5 @@ impl Mail {
         self.toast(words, Severity::Danger, cx);
     }
 }
+
+impl gpui::EventEmitter<MailNotice> for Mail {}

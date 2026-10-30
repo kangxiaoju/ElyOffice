@@ -47,6 +47,14 @@ fn an_existing_account_keeps_an_add_account_button() {
 }
 
 #[test]
+fn an_existing_account_has_a_new_message_button() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cx = TestAppContext::single();
+    let (_, cx, _, _) = opened(dir.path(), &mut cx);
+    assert!(cx.debug_bounds("mail-write-new").is_some());
+}
+
+#[test]
 fn a_folded_account_hides_its_folders_and_stays_folded() {
     let dir = tempfile::tempdir().unwrap();
     let mut cx = TestAppContext::single();
@@ -108,7 +116,9 @@ fn the_keyboard_pins_a_folder() {
     cx.simulate_click(pin.center(), Modifiers::none());
     settle(cx, |app| {
         let folders = &mail.read(app).syncs[&ann].folders;
-        folders.iter().any(|folder| folder.id == sent && folder.pinned)
+        folders
+            .iter()
+            .any(|folder| folder.id == sent && folder.pinned)
     });
 }
 
@@ -131,7 +141,10 @@ fn escape_leaves_the_menu_key_working() {
     assert!(cx.debug_bounds("menu-row-Pin to top").is_none());
     cx.simulate_keystrokes("shift-f10");
     settle(cx, |_| true);
-    assert!(cx.debug_bounds("menu-row-Pin to top").is_some(), "no second menu");
+    assert!(
+        cx.debug_bounds("menu-row-Pin to top").is_some(),
+        "no second menu"
+    );
 }
 
 #[test]
@@ -151,13 +164,21 @@ fn a_shut_menu_stays_shut_when_the_window_opens_again() {
     cx.simulate_keystrokes("escape");
     settle(cx, |_| true);
     // As the tray: a new window around the same mail.
-    let again = cx.update(|_, app| app.open_window(gpui::WindowOptions::default(), |_, _| mail.clone())).unwrap();
+    let again = cx
+        .update(|_, app| app.open_window(gpui::WindowOptions::default(), |_, _| mail.clone()))
+        .unwrap();
     cx.update(|window, _| window.remove_window());
     let mut cx = VisualTestContext::from_window(again.into(), cx);
     cx.simulate_resize(size(px(1100.), px(800.)));
     settle(&mut cx, |_| true);
-    assert!(cx.debug_bounds("item-selected-Sent").is_some(), "the side is drawn");
-    assert!(cx.debug_bounds("menu-row-Pin to top").is_none(), "no menu comes back");
+    assert!(
+        cx.debug_bounds("item-selected-Sent").is_some(),
+        "the side is drawn"
+    );
+    assert!(
+        cx.debug_bounds("menu-row-Pin to top").is_none(),
+        "no menu comes back"
+    );
 }
 
 #[test]
@@ -165,7 +186,9 @@ fn a_right_click_off_the_folders_opens_no_menu() {
     let dir = tempfile::tempdir().unwrap();
     let mut cx = TestAppContext::single();
     let (_, cx, _, _) = opened(dir.path(), &mut cx);
-    let title = cx.debug_bounds("fold ann@example.com").expect("the account title");
+    let title = cx
+        .debug_bounds("fold ann@example.com")
+        .expect("the account title");
     cx.simulate_mouse_down(title.center(), MouseButton::Right, Modifiers::none());
     cx.simulate_mouse_up(title.center(), MouseButton::Right, Modifiers::none());
     settle(cx, |_| true);
@@ -177,18 +200,33 @@ fn a_chinese_folder_reads_in_chinese() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let ann = store.add_account(&account("ann@example.com")).unwrap();
-    let folders = [("INBOX", Some(Role::Inbox)), ("Zebra", None), ("&UXZO1mWHTvZZOQ-", None)];
-    let [_, zebra, other]: [MailboxId; 3] = store.set_folders(ann, &folders).unwrap().try_into().unwrap();
+    let folders = [
+        ("INBOX", Some(Role::Inbox)),
+        ("Zebra", None),
+        ("&UXZO1mWHTvZZOQ-", None),
+    ];
+    let [_, zebra, other]: [MailboxId; 3] = store
+        .set_folders(ann, &folders)
+        .unwrap()
+        .try_into()
+        .unwrap();
     drop(store);
     let mut cx = TestAppContext::single();
     let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
-    settle(cx, |app| mail.read(app).syncs.get(&ann).is_some_and(|each| each.folders.len() == 3));
+    settle(cx, |app| {
+        mail.read(app)
+            .syncs
+            .get(&ann)
+            .is_some_and(|each| each.folders.len() == 3)
+    });
     cx.update(|_, app| mail.update(app, |mail, cx| mail.open_box(Open::Mailbox(ann, zebra), cx)));
     settle(cx, |_| true);
     let zebra = cx.debug_bounds("item-selected-Zebra").expect("Zebra");
     cx.update(|_, app| mail.update(app, |mail, cx| mail.open_box(Open::Mailbox(ann, other), cx)));
     settle(cx, |_| true);
-    let other = cx.debug_bounds("item-selected-其他文件夹").expect("其他文件夹");
+    let other = cx
+        .debug_bounds("item-selected-其他文件夹")
+        .expect("其他文件夹");
     // Read order: Z before 其; the raw & sorts first.
     assert!(other.top() > zebra.top(), "{other:?} under {zebra:?}");
 }

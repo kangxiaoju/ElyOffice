@@ -1,7 +1,7 @@
 //! Every inbox, then each account's folders, down the left.
 
 use ely_gpui_component::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{Button, ButtonVariant, IconButton},
     layout::ScrollArea,
     mail::{Mailbox, MailboxList},
     menus::{ContextMenu, Menu, MenuItem},
@@ -85,7 +85,8 @@ impl Side {
         let export = MenuItem::new(text(cx, "mail.mbox.export", &[]))
             .icon(IconName::Upload)
             .on_click(move |_, cx| {
-                this.update(cx, |mail, cx| mail.export_mbox(mailbox, &name, cx)).ok();
+                this.update(cx, |mail, cx| mail.export_mbox(mailbox, &name, cx))
+                    .ok();
             });
         let mut menu = Menu::new().item(item).item(export);
         if asked.local {
@@ -93,7 +94,10 @@ impl Side {
             let remove = MenuItem::new(text(cx, "mail.mbox.remove", &[]))
                 .icon(IconName::Trash2)
                 .on_click(move |_, cx| {
-                    this.update(cx, |mail, cx| mail.ask_remove_imported(account, mailbox, name.clone(), cx)).ok();
+                    this.update(cx, |mail, cx| {
+                        mail.ask_remove_imported(account, mailbox, name.clone(), cx)
+                    })
+                    .ok();
                 });
             menu = menu.item(remove);
         }
@@ -173,7 +177,9 @@ impl Render for Side {
         let folded: Vec<String> = folded.map(|(_, account)| account.address.clone()).collect();
         let mut list = MailboxList::new("mail-boxes").fixed_section(
             text(cx, "mail.boxes.unified", &[]),
-            [inboxes, drafts, outbox, contacts].into_iter().chain(pinned),
+            [inboxes, drafts, outbox, contacts]
+                .into_iter()
+                .chain(pinned),
         );
         for (address, boxes) in accounts {
             list = list.section(address, boxes);
@@ -197,6 +203,11 @@ impl Render for Side {
             .on_menu(move |key, at, _, cx| {
                 side.update(cx, |side, cx| side.ask(key, at, cx)).ok();
             });
+        let write = Button::new("mail-write-new", text(cx, "mail.write.new", &[]))
+            .variant(ButtonVariant::Primary)
+            .size(ControlSize::Sm)
+            .icon(IconName::Pencil)
+            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::NewMessage), cx));
         let add = IconButton::new("mail-add-account", IconName::Plus)
             .variant(ButtonVariant::Ghost)
             .size(ControlSize::Sm)
@@ -211,8 +222,19 @@ impl Render for Side {
                     .child(
                         div()
                             .flex()
-                            .justify_end()
-                            .child(div().debug_selector(|| "mail-add-account".into()).child(add)),
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .debug_selector(|| "mail-write-new".into())
+                                    .child(write),
+                            )
+                            .child(
+                                div()
+                                    .debug_selector(|| "mail-add-account".into())
+                                    .child(add),
+                            ),
                     )
                     .child(list),
             );
@@ -221,9 +243,7 @@ impl Render for Side {
             Some(offer) => offer.host("mail-side-menu", self.menu(&offer.what, cx)),
             None => ContextMenu::new("mail-side-menu", Menu::new()).manual(None),
         };
-        host.size_full()
-            .child(scroll)
-            .into_any_element()
+        host.size_full().child(scroll).into_any_element()
     }
 }
 

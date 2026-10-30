@@ -4,10 +4,7 @@ use ely_mail_engine::{AccountId, Summary};
 use ely_ui::settings::switches::{self, NOTIFY};
 use gpui::{Context, SystemNotification};
 
-use crate::{
-    boxes::Open,
-    mail::{Mail, text},
-};
+use crate::mail::{Mail, MailNotice, text};
 
 /// Tags of new-mail notices start so.
 const TAG: &str = "mail-new-";
@@ -22,20 +19,24 @@ impl Mail {
             if !response.tag.starts_with(TAG) {
                 return;
             }
-            log::info!("mail: a notice was opened");
-            ely_ui::tray::show_main(cx);
-            this.update(cx, |mail, cx| {
-                // A search or filter may hide the new mail.
-                mail.stop_seeking(cx);
-                mail.filter = ely_mail_engine::Filter::default();
-                mail.open_box(Open::Inboxes, cx);
-            })
-            .ok();
+            let _ = this.update(cx, |mail, cx| {
+                if mail.host_notices {
+                    return;
+                }
+                log::info!("mail: a notice was opened");
+                ely_ui::tray::show_main(cx);
+                mail.open_inboxes(cx);
+            });
         });
     }
 
     /// Tells of `arrived`, unless muted or the window is front.
-    pub(crate) fn announce(&mut self, id: AccountId, arrived: Vec<Summary>, cx: &mut Context<Self>) {
+    pub(crate) fn announce(
+        &mut self,
+        id: AccountId,
+        arrived: Vec<Summary>,
+        cx: &mut Context<Self>,
+    ) {
         let count = arrived.len();
         if count == 0 {
             return;
@@ -43,7 +44,7 @@ impl Mail {
         if !switches::on(NOTIFY, cx) {
             return log::info!("mail: {count} new, notifications are off");
         }
-        if ely_ui::tray::main_in_front(cx) {
+        if !self.host_notices && ely_ui::tray::main_in_front(cx) {
             return log::info!("mail: {count} new, the window is in front");
         }
         let mut senders: Vec<String> = Vec::new();
@@ -53,7 +54,12 @@ impl Mail {
                 senders.push(name);
             }
         }
-        let mut named = senders.iter().take(NAMED).cloned().collect::<Vec<_>>().join(", ");
+        let mut named = senders
+            .iter()
+            .take(NAMED)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
         if senders.len() > NAMED {
             named = text(cx, "mail.notify.more", &[("senders", &named)]).to_string();
         }
@@ -63,12 +69,21 @@ impl Mail {
             count as u64,
             &[("count", &count.to_string()), ("senders", &named)],
         );
-        cx.show_system_notification(SystemNotification {
+        let notice = MailNotice {
             tag: format!("{TAG}{}", id.0).into(),
             title: text(cx, "mail.notify.title", &[]),
             body,
-            actions: Vec::new(),
-        });
+        };
+        if self.host_notices {
+            cx.emit(notice);
+        } else {
+            cx.show_system_notification(SystemNotification {
+                tag: notice.tag,
+                title: notice.title,
+                body: notice.body,
+                actions: Vec::new(),
+            });
+        }
         log::info!("mail: told of {count} new messages for account {}", id.0);
     }
 }

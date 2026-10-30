@@ -43,4 +43,4 @@ mod writing;
 #[cfg(test)]
 mod tests;
 
-pub use mail::{Mail, Parts, embed, open};
+pub use mail::{Mail, MailNotice, Parts, embed, host, open};
