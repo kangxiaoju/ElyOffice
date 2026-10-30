@@ -58,6 +58,12 @@ struct Flow {
     last: Context,
 }
 
+struct Cell {
+    blocks: Vec<Block>,
+    columns: usize,
+    rows: usize,
+}
+
 impl Flow {
     /// HTML collapses white space between words.
     fn text(&mut self, text: &str, context: &Context) {
@@ -157,6 +163,7 @@ impl Build<'_> {
         match *name {
             local_name!("br") => flow.line(),
             local_name!("img") => self.image(attrs, flow, context),
+            local_name!("table") => self.table(at, flow, context),
             local_name!("hr") => flow.push(Block::Rule),
             local_name!("pre") | local_name!("listing") | local_name!("xmp") => {
                 let code = self.raw(at);
@@ -273,6 +280,104 @@ impl Build<'_> {
         if !items.is_empty() {
             flow.push(Block::List { start, items });
         }
+    }
+
+    fn table(&mut self, at: usize, flow: &mut Flow, context: &Context) {
+        flow.end();
+        let mut source = Vec::new();
+        self.table_rows(at, context, &mut source);
+        let mut pending: Vec<usize> = Vec::new();
+        let mut rows = Vec::new();
+        for cells in source {
+            let occupied: Vec<bool> = pending.iter().map(|span| *span > 0).collect();
+            for span in &mut pending {
+                *span = span.saturating_sub(1);
+            }
+            let mut row = Vec::new();
+            let mut column = 0;
+            for cell in cells {
+                while (0..cell.columns)
+                    .any(|offset| occupied.get(column + offset).copied().unwrap_or(false))
+                {
+                    row.resize_with(column + 1, Vec::new);
+                    column += 1;
+                }
+                row.resize_with(column, Vec::new);
+                row.push(cell.blocks);
+                row.extend((1..cell.columns).map(|_| Vec::new()));
+                if cell.rows > 1 {
+                    pending.resize(pending.len().max(column + cell.columns), 0);
+                    for span in &mut pending[column..column + cell.columns] {
+                        *span = (*span).max(cell.rows - 1);
+                    }
+                }
+                column += cell.columns;
+            }
+            row.resize_with(row.len().max(occupied.len()).max(pending.len()), Vec::new);
+            if row.iter().all(Vec::is_empty) && !occupied.iter().any(|occupied| *occupied) {
+                continue;
+            }
+            rows.push(row);
+        }
+        let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+        if columns == 0 {
+            return;
+        }
+        for row in &mut rows {
+            row.resize_with(columns, Vec::new);
+        }
+        let head = rows.remove(0);
+        flow.push(Block::Table { head, rows });
+    }
+
+    fn table_rows(&mut self, at: usize, context: &Context, rows: &mut Vec<Vec<Cell>>) {
+        for &child in &self.nodes[at].children {
+            let Data::Element { name, .. } = &self.nodes[child].data else {
+                continue;
+            };
+            match name.local {
+                local_name!("tr") => {
+                    if let Some(row) = self.table_row(child, context) {
+                        rows.push(row);
+                    }
+                }
+                local_name!("thead") | local_name!("tbody") | local_name!("tfoot") => {
+                    self.table_rows(child, context, rows)
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn table_row(&mut self, at: usize, context: &Context) -> Option<Vec<Cell>> {
+        if !self.shows(at) {
+            return None;
+        }
+        let mut row = Vec::new();
+        for &child in &self.nodes[at].children {
+            let Data::Element { name, attrs, .. } = &self.nodes[child].data else {
+                continue;
+            };
+            let is_header = name.local == local_name!("th");
+            if (!is_header && name.local != local_name!("td")) || !self.shows(child) {
+                continue;
+            }
+            let mut flow = Flow::default();
+            self.children(child, &mut flow, context);
+            flow.end();
+            let span = |name| {
+                value(attrs, name)
+                    .and_then(|span| span.trim().parse::<usize>().ok())
+                    .unwrap_or(1)
+                    .clamp(1, 64)
+            };
+            row.push(Cell {
+                blocks: flow.blocks,
+                columns: span("colspan"),
+                rows: span("rowspan"),
+            });
+        }
+        (!row.is_empty()).then_some(row)
     }
 
     fn image(&mut self, attrs: &[(LocalName, String)], flow: &mut Flow, context: &Context) {

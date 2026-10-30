@@ -40,6 +40,15 @@ fn block_lines(block: &Block) -> Vec<String> {
                 false => format!("> {line}"),
             })
             .collect(),
+        Block::Table { head, rows } => std::iter::once(head)
+            .chain(rows.iter())
+            .map(|row| {
+                row.iter()
+                    .map(|cell| lines(cell).join(" "))
+                    .collect::<Vec<_>>()
+                    .join("\t")
+            })
+            .collect(),
         Block::List { start, items } => {
             let mut out = Vec::new();
             for (at, item) in items.iter().enumerate() {

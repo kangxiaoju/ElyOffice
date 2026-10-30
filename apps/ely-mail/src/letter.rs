@@ -1,7 +1,7 @@
 //! A message turned into what the pane draws (C12.10).
 
 use ely_gpui_component::documents::{
-    HeldPicture, Inline as Line, MarkdownBlock as Node, Pictures, Style as Mark,
+    AlignKind, HeldPicture, Inline as Line, MarkdownBlock as Node, Pictures, Style as Mark,
 };
 use ely_mail_engine::{
     Part, Stored,
@@ -140,6 +140,14 @@ impl Held<'_> {
                 start,
                 items: (items.into_iter())
                     .map(|item| (None, self.nodes(item)))
+                    .collect(),
+            },
+            Block::Table { head, rows } => Node::Table {
+                aligns: vec![AlignKind::None; head.len()],
+                head: head.into_iter().map(|cell| self.nodes(cell)).collect(),
+                rows: rows
+                    .into_iter()
+                    .map(|row| row.into_iter().map(|cell| self.nodes(cell)).collect())
                     .collect(),
             },
             Block::Code(text) => Node::Code {

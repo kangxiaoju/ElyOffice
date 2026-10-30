@@ -329,3 +329,35 @@ fn every_body_of_a_mixed_letter_shows() {
         ]
     );
 }
+
+#[test]
+fn an_html_table_reaches_the_reader_as_a_table() {
+    let raw = b"From: Ann <ann@example.com>\r\nSubject: report\r\n\
+                Content-Type: text/html\r\n\r\n\
+                <table><thead><tr><th>Date</th><th>Total</th></tr></thead>\
+                <tbody><tr><td>2026-10-10</td><td>1894</td></tr></tbody></table>\r\n";
+    let mail = ely_mail_engine::read(raw).unwrap();
+    let words = Words {
+        broken: "broken".into(),
+        waiting: "waiting".into(),
+        not_picture: "not a picture".into(),
+        svg: "no svg".into(),
+        unnamed: "unnamed".into(),
+    };
+    let body = letter::body(&[], mail, &words);
+    let [MarkdownBlock::Table { head, rows, .. }] = &body.blocks[..] else {
+        panic!("HTML table was flattened: {:?}", body.blocks);
+    };
+    let text = |blocks: &[MarkdownBlock]| match &blocks[0] {
+        MarkdownBlock::Paragraph(line) => line.text.clone(),
+        other => panic!("unexpected cell block {other:?}"),
+    };
+    assert_eq!(
+        head.iter().map(|cell| text(cell)).collect::<Vec<_>>(),
+        ["Date", "Total"]
+    );
+    assert_eq!(
+        rows[0].iter().map(|cell| text(cell)).collect::<Vec<_>>(),
+        ["2026-10-10", "1894"]
+    );
+}

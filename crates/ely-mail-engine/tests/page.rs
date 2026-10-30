@@ -125,10 +125,34 @@ fn structure_keeps_headings_lists_quotes_code_and_lines() {
             Block::Quote(vec![text("said"), Block::Quote(vec![text("before")])]),
             Block::Code("  let x = 1;\n  x".into()),
             Block::Rule,
-            text("a\nb"),
-            text("cell"),
-            text("next"),
+            Block::Table {
+                head: vec![vec![text("cell"), text("next")]],
+                rows: Vec::new(),
+            },
         ]
+    );
+}
+
+#[test]
+fn tables_keep_header_order_and_expand_column_spans() {
+    let page = page::html(
+        "<table><tr><th rowspan='2'>Product</th><th colspan='2'>Summary</th></tr><tr><td>Week</td><td>Total</td></tr><tr><td>A</td><td>W1</td><td>2</td></tr></table>",
+        &[],
+    );
+    let [Block::Table { head, rows }] = &page.blocks[..] else {
+        panic!("a table: {page:?}");
+    };
+    assert_eq!(
+        head,
+        &[vec![text("Product")], vec![text("Summary")], Vec::new()]
+    );
+    assert_eq!(
+        rows[0],
+        vec![Vec::new(), vec![text("Week")], vec![text("Total")]]
+    );
+    assert_eq!(
+        rows[1],
+        vec![vec![text("A")], vec![text("W1")], vec![text("2")]]
     );
 }
 

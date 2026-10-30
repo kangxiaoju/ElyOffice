@@ -63,6 +63,11 @@ pub enum Block {
         start: Option<u64>,
         items: Vec<Vec<Block>>,
     },
+    /// Header cells, then body rows; every cell keeps its block structure.
+    Table {
+        head: Vec<Vec<Block>>,
+        rows: Vec<Vec<Vec<Block>>>,
+    },
     Code(String),
     Rule,
     Image(Image),
@@ -125,6 +130,10 @@ fn snip(blocks: &[Block], quotes: bool, words: &mut String) {
             Block::Code(text) => words.push_str(text),
             Block::Quote(inner) if quotes => snip(inner, quotes, words),
             Block::List { items, .. } => items.iter().for_each(|item| snip(item, quotes, words)),
+            Block::Table { head, rows } => head
+                .iter()
+                .chain(rows.iter().flat_map(|row| row.iter()))
+                .for_each(|cell| snip(cell, quotes, words)),
             Block::Quote(_) | Block::Rule | Block::Image(_) => {}
         }
         words.push(' ');

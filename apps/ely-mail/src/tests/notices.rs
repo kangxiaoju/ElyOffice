@@ -2,6 +2,7 @@ use ely_mail_engine::{AccountId, Mailbox, MailboxId, MessageId, Store, Summary};
 use gpui::{Entity, TestAppContext};
 
 use super::{Keys, account, window};
+use crate::Mail;
 
 fn from(name: Option<&str>, email: &str) -> Summary {
     Summary {
