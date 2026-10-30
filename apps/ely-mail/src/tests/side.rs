@@ -35,6 +35,18 @@ fn opened<'a>(
 }
 
 #[test]
+fn an_existing_account_keeps_an_add_account_button() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    store.add_account(&account("ann@example.com")).unwrap();
+    drop(store);
+    let mut cx = TestAppContext::single();
+    let (_mail, cx) = window(&mut cx, dir.path(), Keys::default());
+    settle(cx, |_| true);
+    assert!(cx.debug_bounds("mail-add-account").is_some());
+}
+
+#[test]
 fn a_folded_account_hides_its_folders_and_stays_folded() {
     let dir = tempfile::tempdir().unwrap();
     let mut cx = TestAppContext::single();

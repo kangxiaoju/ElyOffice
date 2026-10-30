@@ -1,15 +1,17 @@
 //! Every inbox, then each account's folders, down the left.
 
 use ely_gpui_component::{
+    buttons::{ButtonVariant, IconButton},
     layout::ScrollArea,
     mail::{Mailbox, MailboxList},
     menus::{ContextMenu, Menu, MenuItem},
     primitives::IconName,
+    theme::ControlSize,
 };
 use ely_mail_engine::{AccountId, LocalFolder, MailboxId, Role};
 use gpui::{
-    App, Context, IntoElement, ParentElement as _, Pixels, Point, Render, SharedString,
-    Styled as _, WeakEntity, Window, div,
+    App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Point, Render,
+    SharedString, Styled as _, WeakEntity, Window, div,
 };
 
 use ely_ui::menu::Offer;
@@ -17,6 +19,7 @@ use ely_ui::menu::Offer;
 use crate::{
     boxes::Open,
     mail::{Mail, text},
+    menu,
 };
 
 /// The folder a menu was asked for.
@@ -194,10 +197,25 @@ impl Render for Side {
             .on_menu(move |key, at, _, cx| {
                 side.update(cx, |side, cx| side.ask(key, at, cx)).ok();
             });
+        let add = IconButton::new("mail-add-account", IconName::Plus)
+            .variant(ButtonVariant::Ghost)
+            .size(ControlSize::Sm)
+            .tooltip(text(cx, "mail.add.open", &[]))
+            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::AddAccount), cx));
         let scroll = ScrollArea::new("mail-side-scroll")
             .vertical()
             .size_full()
-            .child(div().p_2().child(list));
+            .child(
+                div()
+                    .p_2()
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .child(div().debug_selector(|| "mail-add-account".into()).child(add)),
+                    )
+                    .child(list),
+            );
         // The host stays, so the list's focus survives the menu.
         let host = match &self.asked {
             Some(offer) => offer.host("mail-side-menu", self.menu(&offer.what, cx)),
