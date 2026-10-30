@@ -290,15 +290,22 @@ fn fact(summary: &Summary) -> Fact {
     }
 }
 
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// `none` names a missing sender, then subject.
 fn row(summary: Summary, none: &(SharedString, SharedString)) -> Row {
     let key = key(&summary);
     let from = summary.from.first().map(|from| match &from.name {
-        Some(name) if !name.trim().is_empty() => name.clone(),
-        _ => from.email.clone(),
+        Some(name) if !name.trim().is_empty() => one_line(name),
+        _ => one_line(&from.email),
     });
     let from: SharedString = from.map_or_else(|| none.0.clone(), Into::into);
-    let subject: SharedString = summary.subject.map_or_else(|| none.1.clone(), Into::into);
+    let subject: SharedString = summary
+        .subject
+        .map(|subject| one_line(&subject))
+        .map_or_else(|| none.1.clone(), Into::into);
     let row = match summary.date.map(jiff::Timestamp::from_second) {
         Some(Ok(at)) => Row::new(key, from, subject, at),
         Some(Err(error)) => {
@@ -311,5 +318,33 @@ fn row(summary: Summary, none: &(SharedString, SharedString)) -> Row {
     match summary.attachments {
         Some(count) => row.attachments(count as usize),
         None => row,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_rows_collapse_header_newlines_for_single_line_components() {
+        let summary = Summary {
+            id: MessageId(1),
+            account: AccountId(1),
+            mailbox: MailboxId(1),
+            role: None,
+            pop: false,
+            from: vec![ely_mail_engine::Mailbox {
+                name: Some("Sender\nName".into()),
+                email: "sender@example.com".into(),
+            }],
+            subject: Some("First\r\nSecond".into()),
+            date: None,
+            seen: false,
+            flagged: false,
+            attachments: None,
+        };
+        let row = row(summary, &("Unknown".into(), "No subject".into()));
+        assert_eq!(row.from.as_ref(), "Sender Name");
+        assert_eq!(row.subject.as_ref(), "First Second");
     }
 }
