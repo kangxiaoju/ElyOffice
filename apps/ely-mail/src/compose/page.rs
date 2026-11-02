@@ -1,22 +1,21 @@
 //! What the compose window draws.
 
 use ely_gpui_component::{
-    buttons::SegmentedControl,
     chat::Attachment,
+    documents::RichTextEditor,
     feedback::{Alert, Banner},
     forms::{Choice, Select},
     layout::ScrollArea,
     mail::{MailComposer, QuotedText},
     overlays::ConfirmDialog,
     primitives::Severity,
-    theme::{ActiveTheme as _, Radius},
     typography::format,
 };
 use ely_mail_engine::{AccountId, compose};
 use ely_ui::Shell;
 use gpui::{
     AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
-    Styled as _, Window, div, prelude::FluentBuilder as _, px,
+    Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 
 use super::{Compose, file_name};
@@ -45,19 +44,6 @@ impl Compose {
                     .ok();
             });
         Some(div().max_w_96().child(select).into_any_element())
-    }
-
-    fn mode(&self, cx: &mut Context<Self>) -> SegmentedControl {
-        let this = cx.weak_entity();
-        let chosen = if self.markdown { "markdown" } else { "plain" };
-        SegmentedControl::new("mail-write-mode", chosen)
-            .segment("plain", text(cx, "mail.write.plain", &[]), None)
-            .segment("markdown", text(cx, "mail.write.markdown", &[]), None)
-            .on_change(move |value, window, cx| {
-                let markdown = value == "markdown";
-                this.update(cx, |compose, cx| compose.set_markdown(markdown, window, cx))
-                    .ok();
-            })
     }
 
     fn notices(&self, cx: &App) -> Vec<AnyElement> {
@@ -102,7 +88,7 @@ impl Compose {
             .map(|file| file.part.bytes.len() as u64)
             .sum();
         // Base64 grows files by a third.
-        let whole = files * 4 / 3 + self.document.read(cx).text(cx).len() as u64 * 2;
+        let whole = files * 4 / 3 + self.document.read(cx).text().len() as u64 * 2;
         let sender = self.sender()?;
         let limit = sender.limit?;
         (whole > limit).then_some((sender, whole, limit))
@@ -165,15 +151,9 @@ impl Compose {
 
 impl Render for Compose {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
         let body = div()
             .debug_selector(|| "write-words".into())
-            .h(px(260.0))
-            .border_1()
-            .border_color(theme.colors.border)
-            .rounded(theme.radius(Radius::Md))
-            .overflow_hidden()
-            .child(self.document.clone());
+            .child(RichTextEditor::new("mail-write-editor", &self.document));
         let files = self.files.iter().map(|file| Attachment {
             key: file.key.to_string().into(),
             name: file_name(&file.part, cx),
@@ -243,7 +223,6 @@ impl Render for Compose {
             .gap_4()
             .children(problem)
             .children(self.sender_picker(cx))
-            .child(div().flex().child(self.mode(cx)))
             .child(composer)
             .children(self.notices(cx));
         Shell::new(text(cx, "mail.write.title", &[]), &self.focus)

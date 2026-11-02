@@ -142,8 +142,9 @@ impl Held<'_> {
                     .map(|item| (None, self.nodes(item)))
                     .collect(),
             },
-            Block::Table { head, rows } => Node::Table {
+            Block::Table { head, rows, spans } => Node::Table {
                 aligns: vec![AlignKind::None; head.len()],
+                spans,
                 head: head.into_iter().map(|cell| self.nodes(cell)).collect(),
                 rows: rows
                     .into_iter()

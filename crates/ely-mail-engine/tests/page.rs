@@ -125,21 +125,23 @@ fn structure_keeps_headings_lists_quotes_code_and_lines() {
             Block::Quote(vec![text("said"), Block::Quote(vec![text("before")])]),
             Block::Code("  let x = 1;\n  x".into()),
             Block::Rule,
+            text("a\nb"),
             Block::Table {
-                head: vec![vec![text("cell"), text("next")]],
+                head: vec![vec![text("cell")], vec![text("next")]],
                 rows: Vec::new(),
+                spans: vec![vec![1, 1]],
             },
         ]
     );
 }
 
 #[test]
-fn tables_keep_header_order_and_expand_column_spans() {
+fn tables_keep_header_order_and_column_spans() {
     let page = page::html(
         "<table><tr><th rowspan='2'>Product</th><th colspan='2'>Summary</th></tr><tr><td>Week</td><td>Total</td></tr><tr><td>A</td><td>W1</td><td>2</td></tr></table>",
         &[],
     );
-    let [Block::Table { head, rows }] = &page.blocks[..] else {
+    let [Block::Table { head, rows, spans }] = &page.blocks[..] else {
         panic!("a table: {page:?}");
     };
     assert_eq!(
@@ -154,6 +156,7 @@ fn tables_keep_header_order_and_expand_column_spans() {
         rows[1],
         vec![vec![text("A")], vec![text("W1")], vec![text("2")]]
     );
+    assert_eq!(spans, &[vec![1, 2, 0], vec![1, 1, 1], vec![1, 1, 1]]);
 }
 
 /// Quotes nested `n` deep.
@@ -317,7 +320,15 @@ fn words_stray_in_a_table_go_before_it() {
     );
     assert_eq!(
         page.blocks,
-        [text("stray"), text("cell"), text("after")],
+        [
+            text("stray"),
+            Block::Table {
+                head: vec![vec![text("cell")]],
+                rows: Vec::new(),
+                spans: vec![vec![1]],
+            },
+            text("after")
+        ],
         "as a browser places them"
     );
 }

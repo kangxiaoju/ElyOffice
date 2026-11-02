@@ -288,23 +288,29 @@ impl Build<'_> {
         self.table_rows(at, context, &mut source);
         let mut pending: Vec<usize> = Vec::new();
         let mut rows = Vec::new();
+        let mut spans = Vec::new();
         for cells in source {
             let occupied: Vec<bool> = pending.iter().map(|span| *span > 0).collect();
             for span in &mut pending {
                 *span = span.saturating_sub(1);
             }
             let mut row = Vec::new();
+            let mut widths = Vec::new();
             let mut column = 0;
             for cell in cells {
                 while (0..cell.columns)
                     .any(|offset| occupied.get(column + offset).copied().unwrap_or(false))
                 {
                     row.resize_with(column + 1, Vec::new);
+                    widths.resize(column + 1, 1);
                     column += 1;
                 }
                 row.resize_with(column, Vec::new);
+                widths.resize(column, 1);
                 row.push(cell.blocks);
                 row.extend((1..cell.columns).map(|_| Vec::new()));
+                widths.push(cell.columns);
+                widths.extend((1..cell.columns).map(|_| 0));
                 if cell.rows > 1 {
                     pending.resize(pending.len().max(column + cell.columns), 0);
                     for span in &mut pending[column..column + cell.columns] {
@@ -314,20 +320,23 @@ impl Build<'_> {
                 column += cell.columns;
             }
             row.resize_with(row.len().max(occupied.len()).max(pending.len()), Vec::new);
+            widths.resize(row.len(), 1);
             if row.iter().all(Vec::is_empty) && !occupied.iter().any(|occupied| *occupied) {
                 continue;
             }
             rows.push(row);
+            spans.push(widths);
         }
         let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
         if columns == 0 {
             return;
         }
-        for row in &mut rows {
+        for (row, widths) in rows.iter_mut().zip(&mut spans) {
             row.resize_with(columns, Vec::new);
+            widths.resize(columns, 1);
         }
         let head = rows.remove(0);
-        flow.push(Block::Table { head, rows });
+        flow.push(Block::Table { head, rows, spans });
     }
 
     fn table_rows(&mut self, at: usize, context: &Context, rows: &mut Vec<Vec<Cell>>) {

@@ -191,7 +191,7 @@ fn a_message_is_built_with_its_hidden_copies_off_the_page() {
     assert_eq!(sent.subject.as_deref(), Some("Plans bcc marker"));
     assert_eq!(sent.from[0].name.as_deref(), Some("Bo Lee"));
     let text = sent.text.unwrap().replace("\r\n", "\n");
-    assert_eq!(text.trim_end(), "**Friday** then\n\n-- \nBo");
+    assert_eq!(text.trim_end(), "Friday then\n\n-- \nBo");
     assert!(sent.html.unwrap().contains("<strong>Friday</strong>"));
     assert_eq!(sent.attachments[0].name.as_deref(), Some("plan.pdf"));
     let plain = Outgoing {

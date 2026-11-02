@@ -67,6 +67,8 @@ pub enum Block {
     Table {
         head: Vec<Vec<Block>>,
         rows: Vec<Vec<Vec<Block>>>,
+        /// Each row's column spans; zero marks a cell covered from its left.
+        spans: Vec<Vec<usize>>,
     },
     Code(String),
     Rule,
@@ -130,7 +132,7 @@ fn snip(blocks: &[Block], quotes: bool, words: &mut String) {
             Block::Code(text) => words.push_str(text),
             Block::Quote(inner) if quotes => snip(inner, quotes, words),
             Block::List { items, .. } => items.iter().for_each(|item| snip(item, quotes, words)),
-            Block::Table { head, rows } => head
+            Block::Table { head, rows, .. } => head
                 .iter()
                 .chain(rows.iter().flat_map(|row| row.iter()))
                 .for_each(|cell| snip(cell, quotes, words)),

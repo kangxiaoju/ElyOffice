@@ -1,9 +1,10 @@
-//! The compose window (C12.12, MAIL-05).
+//! Rich-text composition; legacy plain drafts and mailto bodies stay literal (C12.12, MAIL-05).
 
 use std::path::PathBuf;
 
 use ely_gpui_component::{
-    documents::{DocumentEvent, MarkdownDocument, MarkdownMode},
+    documents::markdown_highlights,
+    forms::{InputEvent, TextInput},
     mail::Draft,
     primitives::Severity,
 };
@@ -48,8 +49,7 @@ pub struct Compose {
     pub before: Option<Earlier>,
     /// Only the answered message's headers are kept.
     pub headers_only: bool,
-    pub markdown: bool,
-    pub document: Entity<MarkdownDocument>,
+    pub document: Entity<TextInput>,
     pub files: Vec<File>,
     next_file: u64,
     /// Files picked and not yet read.
@@ -98,19 +98,22 @@ impl Compose {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        // A link's body is plain text.
-        let (words, markdown) = match (&opening.draft, &opening.asked) {
-            (Some(kept), _) => (kept.unsent.words.as_str(), kept.unsent.markdown),
-            (None, Some(asked)) if !asked.body.is_empty() => (asked.body.as_str(), false),
-            _ => ("", true),
+        // Plain drafts and mailto bodies enter the rich editor as literal text.
+        let words = match (&opening.draft, &opening.asked) {
+            (Some(kept), _) if kept.unsent.markdown => kept.unsent.words.clone(),
+            (Some(kept), _) => compose::rich_text(&kept.unsent.words),
+            (None, Some(asked)) => compose::rich_text(&asked.body),
+            _ => String::new(),
         };
-        let mode = match markdown {
-            true => MarkdownMode::Visual,
-            false => MarkdownMode::Source,
-        };
-        let document = cx.new(|cx| MarkdownDocument::new(words, mode, window, cx));
+        let document = cx.new(|cx| {
+            let mut input = TextInput::new(window, cx)
+                .multi_line(8, 16)
+                .highlighter(markdown_highlights);
+            input.set_text(words, cx);
+            input
+        });
         cx.subscribe(&document, |compose, _, event, cx| {
-            if matches!(event, DocumentEvent::Changed) {
+            if matches!(event, InputEvent::Changed) {
                 compose.touched(cx);
             }
         })
@@ -132,7 +135,6 @@ impl Compose {
             references: Vec::new(),
             before: None,
             headers_only: false,
-            markdown,
             document,
             files: Vec::new(),
             next_file: 0,
@@ -144,7 +146,6 @@ impl Compose {
                 words: String::new(),
                 files: Vec::new(),
                 from: opening.from,
-                markdown: true,
             },
             written: blank(),
             in_flight: None,
@@ -243,23 +244,10 @@ impl Compose {
     fn carried(&self, cx: &App) -> Carried {
         Carried {
             draft: self.written.clone(),
-            words: self.document.read(cx).text(cx),
+            words: self.document.read(cx).text().to_owned(),
             files: self.files.iter().map(|file| file.key).collect(),
             from: self.from,
-            markdown: self.markdown,
         }
-    }
-
-    fn set_markdown(&mut self, markdown: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.markdown = markdown;
-        let mode = match markdown {
-            true => MarkdownMode::Visual,
-            false => MarkdownMode::Source,
-        };
-        self.document
-            .update(cx, |document, cx| document.set_mode(mode, window, cx));
-        self.touched(cx);
-        cx.notify();
     }
 
     fn pick_files(&mut self, cx: &mut Context<Self>) {
@@ -285,7 +273,10 @@ impl Compose {
     /// Reads the files off the UI thread, then lists them.
     pub fn offer(&mut self, contacts: Vec<ely_mail_engine::Contact>, cx: &mut Context<Self>) {
         let named = |contact: ely_mail_engine::Contact| {
-            ely_gpui_component::mail::Contact::new(contact.name.unwrap_or_default(), contact.address)
+            ely_gpui_component::mail::Contact::new(
+                contact.name.unwrap_or_default(),
+                contact.address,
+            )
         };
         self.offered = contacts.into_iter().map(named).collect();
         cx.notify();
@@ -344,8 +335,8 @@ impl Compose {
             cc: addresses(&draft.cc),
             bcc: addresses(&draft.bcc),
             subject: draft.subject.to_string(),
-            words: self.document.read(cx).text(cx),
-            markdown: self.markdown,
+            words: self.document.read(cx).text().to_owned(),
+            markdown: true,
             signature: sender.identity.signature.clone(),
             before: self.before.clone(),
             attachments: self.files.iter().map(|file| file.part.clone()).collect(),
@@ -457,18 +448,13 @@ pub struct Carried {
     words: String,
     files: Vec<u64>,
     from: AccountId,
-    markdown: bool,
 }
 
 impl Carried {
     /// The same message, but for outer spaces.
     pub(super) fn blank_as(&self, base: &Carried) -> bool {
         let words = self.words.trim() == base.words.trim();
-        words
-            && self.draft == base.draft
-            && self.files == base.files
-            && self.from == base.from
-            && self.markdown == base.markdown
+        words && self.draft == base.draft && self.files == base.files && self.from == base.from
     }
 }
 

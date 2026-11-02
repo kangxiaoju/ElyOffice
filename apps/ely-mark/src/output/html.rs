@@ -156,7 +156,12 @@ impl Writer<'_, '_, '_> {
         let mut read = Vec::new();
         self.reader.block(node, &mut read);
         if let Node::Table(_) = node {
-            let [MarkdownBlock::Table { aligns, head, rows }] = read.as_slice() else {
+            let [
+                MarkdownBlock::Table {
+                    aligns, head, rows, ..
+                },
+            ] = read.as_slice()
+            else {
                 unreachable!("a table reads as one table");
             };
             return self.table(node, aligns, head, rows);
@@ -489,7 +494,9 @@ fn line_starts(source: &str) -> Vec<usize> {
     let bytes = source.as_bytes();
     let ends = (bytes.iter().enumerate())
         .filter(|&(at, &byte)| byte == b'\n' || byte == b'\r' && bytes.get(at + 1) != Some(&b'\n'));
-    std::iter::once(0).chain(ends.map(|(at, _)| at + 1)).collect()
+    std::iter::once(0)
+        .chain(ends.map(|(at, _)| at + 1))
+        .collect()
 }
 
 /// An SVG without its XML declaration.

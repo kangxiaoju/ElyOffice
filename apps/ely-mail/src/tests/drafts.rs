@@ -91,6 +91,7 @@ fn words_are_kept_once_typing_stops() {
     pause(&mail, cx, 1);
     let [first] = kept(&mail, cx).try_into().unwrap();
     assert_eq!(first.unsent.words, "Lunch?");
+    assert!(first.unsent.markdown, "new messages are saved as rich text");
     write(compose, "Lunch at one?", cx);
     with(compose, cx, |compose, _, cx| {
         compose.edited(draft(&["ann@example.com"], "Plan"), cx)
@@ -114,6 +115,46 @@ fn words_are_kept_once_typing_stops() {
         cx.update(|_, app| compose.read(app).unwrap().shelf.id.is_none()),
         "back to blank, the draft goes"
     );
+}
+
+#[test]
+fn rich_formatting_is_autosaved_and_sent_without_a_mode_switch() {
+    let dir = tempfile::tempdir().unwrap();
+    seeded(dir.path(), format!("{NOTE}\r\nx").as_bytes(), &[]);
+    let mut cx = TestAppContext::single();
+    let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+    let compose = new_message(&mail, cx);
+    write(compose, "Lunch", cx);
+    with(compose, cx, |compose, _, cx| {
+        compose
+            .document
+            .update(cx, |input, cx| input.select(0..5, cx));
+    });
+    {
+        let mut there = VisualTestContext::from_window(compose.into(), cx);
+        there.run_until_parked();
+        assert!(there.debug_bounds("segment plain").is_none());
+        assert!(there.debug_bounds("segment markdown").is_none());
+        let bold = there
+            .debug_bounds("toggle Bold")
+            .expect("the rich formatting toolbar");
+        there.simulate_click(bold.center(), gpui::Modifiers::none());
+        there.run_until_parked();
+    }
+    pause(&mail, cx, 1);
+    let [saved] = kept(&mail, cx).try_into().unwrap();
+    assert!(saved.unsent.markdown);
+    assert_eq!(saved.unsent.words, "**Lunch**");
+    let out = cx.update(|_, app| {
+        compose
+            .read(app)
+            .unwrap()
+            .outgoing(&draft(&["ann@example.com"], "Hi"), app)
+            .unwrap()
+    });
+    assert!(out.markdown);
+    let sent = ely_mail_engine::read(&crate::writing::prepare(&out).unwrap().bytes).unwrap();
+    assert!(sent.html.unwrap().contains("<strong>Lunch</strong>"));
 }
 
 #[test]
@@ -161,7 +202,7 @@ fn a_draft_reopens_as_it_was_and_once() {
         assert_eq!(again.bcc, ["cy@example.com"]);
         assert_eq!(again.subject.as_ref(), "Plan");
         assert_eq!(again.files.len(), 1);
-        assert_eq!(again.document.read(app).text(app), "**Lunch?**");
+        assert_eq!(again.document.read(app).text(), "**Lunch?**");
     });
     let shut = with(again, cx, |compose, window, cx| {
         compose.may_close(window, cx)
@@ -182,6 +223,62 @@ fn a_draft_reopens_as_it_was_and_once() {
     });
     settle(cx, |_| true);
     assert_eq!(composing(cx).len(), 1, "asked twice at once, one window");
+}
+
+#[test]
+fn a_plain_draft_reopens_literal_and_is_saved_and_sent_as_rich() {
+    let dir = tempfile::tempdir().unwrap();
+    seeded(dir.path(), format!("{NOTE}\r\nx").as_bytes(), &[]);
+    let literal = "# Title\n**bold**\n[label](https://example.com)";
+    let mut store = Store::open(dir.path()).unwrap();
+    let from = store.accounts().unwrap()[0].0;
+    let old = super::outbox::unsent(literal);
+    let id = store.shelve(None, from, &old, None).unwrap().id;
+    drop(store);
+    let mut cx = TestAppContext::single();
+    let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+    cx.update(|_, app| mail.update(app, |mail, cx| mail.reopen(id, cx)));
+    let compose = opened(cx);
+    let out = cx.update(|_, app| {
+        let compose = compose.read(app).unwrap();
+        assert!(compose.document.read(app).is_multi_line());
+        compose
+            .outgoing(&draft(&["ann@example.com"], "Hi"), app)
+            .unwrap()
+    });
+    assert!(out.markdown);
+    assert_eq!(out.words, ely_mail_engine::compose::rich_text(literal));
+    let sent = ely_mail_engine::read(&crate::writing::prepare(&out).unwrap().bytes).unwrap();
+    let html = sent.html.unwrap();
+    assert!(html.contains("**bold**"), "{html}");
+    assert!(!html.contains("<strong>"), "{html}");
+    with(compose, cx, |compose, _, cx| {
+        compose.edited(draft(&["ann@example.com"], "Updated"), cx)
+    });
+    pause(&mail, cx, 1);
+    settle(cx, |app| {
+        let store = mail.read(app).store.clone().unwrap();
+        store.lock().unwrap().drafts().unwrap()[0].unsent.subject == "Updated"
+    });
+    let [saved] = kept(&mail, cx).try_into().unwrap();
+    assert!(saved.unsent.markdown);
+    assert_eq!(saved.unsent.words, out.words);
+    with(compose, cx, |_, window, _| window.remove_window());
+    settle(cx, |app| compose.read(app).is_err());
+    cx.update(|_, app| mail.update(app, |mail, cx| mail.reopen(id, cx)));
+    let again = opened(cx);
+    cx.update(|_, app| {
+        let out = again
+            .read(app)
+            .unwrap()
+            .outgoing(&draft(&["ann@example.com"], "Updated"), app)
+            .unwrap();
+        assert!(out.markdown);
+        assert_eq!(
+            out.words, saved.unsent.words,
+            "rich drafts are not escaped twice"
+        );
+    });
 }
 
 /// Holds whatever connects, until told to let go.

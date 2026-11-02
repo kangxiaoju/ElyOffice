@@ -34,24 +34,73 @@ fn opened<'a>(
     (mail, cx, ann, boxes)
 }
 
-#[test]
-fn an_existing_account_keeps_an_add_account_button() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = Store::open(dir.path()).unwrap();
-    store.add_account(&account("ann@example.com")).unwrap();
-    drop(store);
-    let mut cx = TestAppContext::single();
-    let (_mail, cx) = window(&mut cx, dir.path(), Keys::default());
+/// Opens the Plus menu and checks the two operations are in their intended order.
+fn actions(cx: &mut VisualTestContext) -> [gpui::Bounds<gpui::Pixels>; 2] {
+    let plus = cx.debug_bounds("mail-box-actions").expect("the Plus menu");
+    cx.simulate_click(plus.center(), Modifiers::none());
     settle(cx, |_| true);
-    assert!(cx.debug_bounds("mail-add-account").is_some());
+    let add = cx
+        .debug_bounds("menu-row-Add Mailbox…")
+        .expect("add mailbox operation");
+    let write = cx
+        .debug_bounds("menu-row-New Message")
+        .expect("write operation");
+    assert!(add.top() < write.top());
+    [add, write]
 }
 
 #[test]
-fn an_existing_account_has_a_new_message_button() {
+fn the_plus_menu_starts_adding_a_mailbox() {
     let dir = tempfile::tempdir().unwrap();
     let mut cx = TestAppContext::single();
-    let (_, cx, _, _) = opened(dir.path(), &mut cx);
-    assert!(cx.debug_bounds("mail-write-new").is_some());
+    let (mail, cx, _, _) = opened(dir.path(), &mut cx);
+    let [add, _] = actions(cx);
+    cx.simulate_click(add.center(), Modifiers::none());
+    settle(cx, |app| mail.read(app).adding.is_some());
+}
+
+#[test]
+fn the_plus_menu_opens_a_new_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cx = TestAppContext::single();
+    let (mail, cx, ann, [inbox, _]) = opened(dir.path(), &mut cx);
+    let selected = Open::Mailbox(ann, inbox);
+    cx.update(|_, app| mail.update(app, |mail, cx| mail.open_box(selected, cx)));
+    settle(cx, |_| true);
+    assert!(super::writing::composing(cx).is_empty());
+    let [_, write] = actions(cx);
+    cx.simulate_click(write.center(), Modifiers::none());
+    super::writing::opened(cx);
+    assert!(cx.update(|_, app| mail.read(app).open == selected));
+}
+
+#[test]
+fn dismissing_the_plus_menu_keeps_the_account_folded_and_selected() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cx = TestAppContext::single();
+    let (mail, cx, ann, [inbox, _]) = opened(dir.path(), &mut cx);
+    let selected = Open::Mailbox(ann, inbox);
+    cx.update(|_, app| mail.update(app, |mail, cx| mail.open_box(selected, cx)));
+    settle(cx, |_| true);
+    let title = cx
+        .debug_bounds("fold ann@example.com")
+        .expect("account title");
+    cx.simulate_click(title.center(), Modifiers::none());
+    settle(cx, |app| mail.read(app).folded.contains(&ann));
+    actions(cx);
+    cx.simulate_keystrokes("escape");
+    settle(cx, |_| true);
+    assert!(cx.update(|_, app| {
+        let mail = mail.read(app);
+        mail.folded.contains(&ann) && mail.open == selected
+    }));
+    assert!(cx.debug_bounds("item-selected-Inbox").is_none());
+    let title = cx
+        .debug_bounds("fold ann@example.com")
+        .expect("account title");
+    cx.simulate_click(title.center(), Modifiers::none());
+    settle(cx, |app| !mail.read(app).folded.contains(&ann));
+    assert!(cx.debug_bounds("item-selected-Inbox").is_some());
 }
 
 #[test]

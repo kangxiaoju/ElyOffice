@@ -2,8 +2,8 @@
 
 use ely_gpui_component::primitives::Severity;
 use ely_mail_engine::{
-    AccountId, Error, Filed, Filing, Going, Landing, Letter, OutboxId, Protocol, Queued,
-    Store, Unsent, compose::attachment,
+    AccountId, Error, Filed, Filing, Going, Landing, Letter, OutboxId, Protocol, Queued, Store,
+    Unsent, compose::attachment,
 };
 use gpui::{Entity, TestAppContext, VisualTestContext};
 
@@ -151,7 +151,10 @@ fn a_failed_message_cancels_or_goes_back_to_a_draft() {
     let [again] = composing(cx).try_into().unwrap();
     cx.update(|_, app| {
         let again = again.read(app).unwrap();
-        assert_eq!(again.document.read(app).text(app), "Lunch?");
+        assert_eq!(
+            again.document.read(app).text(),
+            ely_mail_engine::compose::rich_text("Lunch?")
+        );
         assert_eq!(again.to, ["ann@example.com"]);
         assert_eq!(again.files.len(), 1);
     });

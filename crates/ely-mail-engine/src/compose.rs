@@ -1,7 +1,9 @@
 //! Answers, forwards and the bodies they send (C12.12, MAIL-05).
 
-use crate::{Error, Mail, Mailbox, Part, Result, page};
+use crate::{Mail, Mailbox, Part, Result, page};
 use serde::{Deserialize, Serialize};
+
+mod plain;
 
 /// Where an answer or a forward starts.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -128,13 +130,37 @@ pub struct Bodies {
     pub text: String,
     pub html: Option<String>,
 }
+/// Imports literal text into the rich editor without interpreting its punctuation.
+pub fn rich_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut lines = text.split('\n').peekable();
+    while let Some(line) = lines.next() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        for ch in line.chars() {
+            if ch.is_ascii_punctuation() {
+                out.push('\\');
+            }
+            out.push(ch);
+        }
+        if lines.peek().is_some() {
+            out.push('\n');
+        }
+    }
+    out
+}
 
 pub fn bodies(writing: &Writing) -> Result<Bodies> {
-    let words = writing.words.trim_end();
+    let words = writing.words;
     let signature = writing.signature.trim();
+    let (body, mut html) = if writing.markdown {
+        let (text, html) = plain::bodies(words)?;
+        (text, Some(html))
+    } else {
+        (words.trim_end().to_owned(), None)
+    };
     let mut text = Vec::new();
-    if !words.is_empty() {
-        text.push(words.to_owned());
+    if !body.is_empty() {
+        text.push(body);
     }
     if !signature.is_empty() {
         // RFC 3676 §4.3: dash, dash, space.
@@ -156,11 +182,9 @@ pub fn bodies(writing: &Writing) -> Result<Bodies> {
         None => {}
     }
     let text = text.join("\n\n");
-    if !writing.markdown {
+    let Some(mut html) = html.take() else {
         return Ok(Bodies { text, html: None });
-    }
-    let mut html = markdown::to_html_with_options(words, &markdown::Options::gfm())
-        .map_err(|err| Error::Mime(err.to_string()))?;
+    };
     if !signature.is_empty() {
         html.push_str(&format!("<p>-- <br>\n{}</p>\n", lines(signature)));
     }
