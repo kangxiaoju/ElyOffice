@@ -3,7 +3,7 @@
 use crate::{Mail, Mailbox, Part, Result, page};
 use serde::{Deserialize, Serialize};
 
-mod plain;
+mod legacy;
 
 /// Where an answer or a forward starts.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,48 +116,34 @@ pub enum Earlier {
 
 /// What the writer wrote, and what goes under it.
 pub struct Writing<'a> {
-    pub words: &'a str,
-    /// The words are Markdown; plain text only otherwise.
-    pub markdown: bool,
+    /// The editor's plain-text alternative, never Markdown.
+    pub text: &'a str,
+    /// The editor's native HTML serialization.
+    pub html: &'a str,
     /// Empty for none.
     pub signature: &'a str,
     pub earlier: Option<&'a Earlier>,
 }
 
-/// A message's plain text, and its HTML for Markdown.
+/// A message's explicit plain-text and HTML alternatives.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bodies {
     pub text: String,
     pub html: Option<String>,
 }
-/// Imports literal text into the rich editor without interpreting its punctuation.
-pub fn rich_text(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut lines = text.split('\n').peekable();
-    while let Some(line) = lines.next() {
-        let line = line.strip_suffix('\r').unwrap_or(line);
-        for ch in line.chars() {
-            if ch.is_ascii_punctuation() {
-                out.push('\\');
-            }
-            out.push(ch);
-        }
-        if lines.peek().is_some() {
-            out.push('\n');
-        }
+/// Imports a pre-HTML draft once; never used for newly edited messages.
+pub fn legacy_draft_html(words: &str, markdown: bool) -> Result<String> {
+    if markdown {
+        legacy::bodies(words).map(|(_, html)| html)
+    } else {
+        Ok(format!("<div style=\"white-space:pre-wrap\">{}</div>", escape(words).replace('\n', "<br>")))
     }
-    out
 }
 
 pub fn bodies(writing: &Writing) -> Result<Bodies> {
-    let words = writing.words;
     let signature = writing.signature.trim();
-    let (body, mut html) = if writing.markdown {
-        let (text, html) = plain::bodies(words)?;
-        (text, Some(html))
-    } else {
-        (words.trim_end().to_owned(), None)
-    };
+    let body = writing.text.to_owned();
+    let mut html = writing.html.to_owned();
     let mut text = Vec::new();
     if !body.is_empty() {
         text.push(body);
@@ -182,9 +168,6 @@ pub fn bodies(writing: &Writing) -> Result<Bodies> {
         None => {}
     }
     let text = text.join("\n\n");
-    let Some(mut html) = html.take() else {
-        return Ok(Bodies { text, html: None });
-    };
     if !signature.is_empty() {
         html.push_str(&format!("<p>-- <br>\n{}</p>\n", lines(signature)));
     }

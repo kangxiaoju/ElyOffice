@@ -64,8 +64,10 @@ pub struct Outgoing {
     pub cc: Vec<Mailbox>,
     pub bcc: Vec<Mailbox>,
     pub subject: String,
-    pub words: String,
-    pub markdown: bool,
+    /// Plain alternative serialized by the native HTML editor.
+    pub text: String,
+    /// HTML serialized by the native HTML editor.
+    pub html: String,
     pub signature: String,
     pub before: Option<Earlier>,
     pub attachments: Vec<Part>,
@@ -77,8 +79,8 @@ pub struct Outgoing {
 /// Bcc stays in it until it is sent.
 pub fn prepare(out: &Outgoing) -> Result<Letter> {
     let bodies = compose::bodies(&Writing {
-        words: &out.words,
-        markdown: out.markdown,
+        text: &out.text,
+        html: &out.html,
         signature: &out.signature,
         earlier: out.before.as_ref(),
     })?;

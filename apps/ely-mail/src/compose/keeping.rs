@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use ely_gpui_component::primitives::Severity;
 use ely_mail_engine::{DraftId, Unsent};
-use gpui::{App, Context, SharedString, Window};
+use gpui::{App, AppContext as _, Context, SharedString, Window};
 
 use super::{Carried, Compose};
 use crate::mail::text;
@@ -86,6 +86,7 @@ impl Compose {
         if self.shelf.discarded {
             return true;
         }
+        if self.import_failed { return true; }
         let now = self.carried(cx);
         match self.shelf.id {
             Some(_) => self.shelf.kept.as_ref() == Some(&now),
@@ -98,6 +99,7 @@ impl Compose {
         if self.shelf.discarded {
             return self.settle(cx);
         }
+        if self.import_failed { return self.settle(cx); }
         if self.shelf.busy || self.sending {
             self.shelf.queued.get_or_insert(Step::Keep);
             return;
@@ -119,22 +121,34 @@ impl Compose {
     }
 
     fn write(&mut self, now: Carried, cx: &mut Context<Self>) {
-        let same = |kept: &Carried| kept.files == now.files;
-        let files = match self.shelf.kept.as_ref().is_some_and(same) {
-            true => None,
-            false => Some(self.files.iter().map(|file| file.part.clone()).collect()),
+        let Some(job) = self.body_job(&self.written, cx) else {
+            self.wrote(Err("the draft cannot be edited or its sender is unavailable".into()), cx);
+            return;
         };
-        let unsent = self.unsent(cx);
-        let out = self.outgoing(&self.written, cx);
+        let same = |kept: &Carried| kept.files == now.files;
+        let replace_files = !self.shelf.kept.as_ref().is_some_and(same);
         self.shelf.busy = true;
         self.shelf.writing = Some(now);
-        let (id, from, this) = (self.shelf.id, self.from, cx.weak_entity());
-        let asked = self.mail.update(cx, |mail, cx| {
-            mail.keep_draft(id, from, unsent, files, out, this, cx)
+        let (id, from) = (self.shelf.id, self.from);
+        let encoded = cx.background_spawn(async move {
+            job.encode().map(|(unsent, out)| {
+                let files = replace_files.then(|| out.attachments.clone());
+                (unsent, out, files)
+            })
         });
-        if asked.is_err() {
-            self.wrote(Err("the mail window is closed".into()), cx);
-        }
+        cx.spawn(async move |this, cx| {
+            let encoded = encoded.await;
+            this.update(cx, |compose, cx| {
+                let (unsent, out, files) = match encoded {
+                    Ok(encoded) => encoded,
+                    Err(error) => return compose.wrote(Err(error), cx),
+                };
+                let owner = cx.weak_entity();
+                if compose.mail.update(cx, |mail, cx| mail.keep_draft(id, from, unsent, files, Some(out), owner, cx)).is_err() {
+                    compose.wrote(Err("the mail window is closed".into()), cx);
+                }
+            }).ok();
+        }).detach();
     }
 
     /// The store's answer to a write.
@@ -348,14 +362,15 @@ impl Compose {
         self.drop_draft(cx);
     }
 
-    pub(super) fn unsent(&self, cx: &App) -> Unsent {
+    pub(super) fn unsent_headers(&self) -> Unsent {
         Unsent {
             to: list(&self.written.to),
             cc: list(&self.written.cc),
             bcc: list(&self.written.bcc),
             subject: self.written.subject.to_string(),
-            words: self.document.read(cx).text().to_owned(),
-            markdown: true,
+            html: None,
+            words: String::new(),
+            markdown: false,
             earlier: self.before.clone(),
             in_reply_to: self.in_reply_to.clone(),
             references: self.references.clone(),

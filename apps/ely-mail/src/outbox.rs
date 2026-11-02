@@ -44,13 +44,14 @@ impl Mail {
         compose: WeakEntity<Compose>,
         cx: &mut Context<Self>,
     ) {
-        let files = out.attachments.clone();
-        let built = cx.background_spawn(async move { prepare(&out) });
+        let built = cx.background_spawn(async move {
+            prepare(&out).map(|built| (built, out.attachments))
+        });
         cx.spawn(async move |this, cx| {
             let built = built.await;
             this.update(cx, |mail, cx| {
-                let built = match built {
-                    Ok(built) => built,
+                let (built, files) = match built {
+                    Ok((built, files)) => (built, files),
                     Err(error) => return queued(compose, Err(error.to_string()), cx),
                 };
                 mail.with_store(

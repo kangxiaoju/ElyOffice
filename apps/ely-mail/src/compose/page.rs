@@ -1,8 +1,9 @@
 //! What the compose window draws.
 
 use ely_gpui_component::{
+    buttons::Button,
     chat::Attachment,
-    documents::RichTextEditor,
+    documents::email::EmailEditorView,
     feedback::{Alert, Banner},
     forms::{Choice, Select},
     layout::ScrollArea,
@@ -88,7 +89,7 @@ impl Compose {
             .map(|file| file.part.bytes.len() as u64)
             .sum();
         // Base64 grows files by a third.
-        let whole = files * 4 / 3 + self.document.read(cx).text().len() as u64 * 2;
+        let whole = files * 4 / 3 + self.document.read(cx).committed_estimated_bytes() as u64 * 2;
         let sender = self.sender()?;
         let limit = sender.limit?;
         (whole > limit).then_some((sender, whole, limit))
@@ -150,10 +151,26 @@ impl Compose {
 }
 
 impl Render for Compose {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.import_failed {
+            let discard = cx.weak_entity();
+            return Shell::new(text(cx, "mail.write.title", &[]), &self.focus)
+                .secondary()
+                .child(div().p_6().flex().flex_col().gap_4()
+                    .children(self.problem.clone().map(|(severity, words)| Banner::new("mail-write-import-error", severity, words)))
+                    .child(div().child("This draft could not be imported. The original is unchanged; close this window or explicitly discard the draft."))
+                    .child(Button::new("mail-write-broken-discard", text(cx, "mail.write.discard.go", &[])).on_click(move |_, window, cx| {
+                        discard.update(cx, |compose, cx| compose.discard(window, cx)).ok();
+                    })))
+                .children(self.discard_dialog(cx))
+                .into_any_element();
+        }
         let body = div()
             .debug_selector(|| "write-words".into())
-            .child(RichTextEditor::new("mail-write-editor", &self.document));
+            .w_full()
+            .h((window.viewport_size().height - window.rem_size() * 18.).max(window.rem_size() * 12.))
+            .flex_none()
+            .child(EmailEditorView::new("mail-write-editor", &self.document));
         let files = self.files.iter().map(|file| Attachment {
             key: file.key.to_string().into(),
             name: file_name(&file.part, cx),
@@ -203,11 +220,7 @@ impl Render for Compose {
             .on_remove(move |key, _, cx| {
                 remove
                     .update(cx, |compose, cx| {
-                        compose
-                            .files
-                            .retain(|file| file.key.to_string() != key.as_ref());
-                        compose.touched(cx);
-                        cx.notify();
+                        compose.remove_file(key.as_ref(), cx);
                     })
                     .ok();
             });
@@ -234,5 +247,6 @@ impl Render for Compose {
                     .child(page),
             )
             .children(self.discard_dialog(cx))
+            .into_any_element()
     }
 }

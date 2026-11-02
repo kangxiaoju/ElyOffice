@@ -19,6 +19,7 @@ path = "src/main.rs"
 embed-resource.workspace = true
 
 [dependencies]
+base64.workspace = true
 directories.workspace = true
 ely-files.workspace = true
 ely-gpui-component.workspace = true
@@ -26,6 +27,7 @@ ely-mail-engine.workspace = true
 ely-platform.workspace = true
 ely-ui.workspace = true
 gpui.workspace = true
+image.workspace = true
 jiff.workspace = true
 log.workspace = true
 serde_json.workspace = true

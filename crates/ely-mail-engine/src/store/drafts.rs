@@ -10,13 +10,17 @@ use crate::{Error, Part, Result, compose::Earlier};
 pub struct DraftId(pub i64);
 
 /// A message as written, before it is built.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unsent {
     pub to: Vec<String>,
     pub cc: Vec<String>,
     pub bcc: Vec<String>,
     pub subject: String,
+    /// Version-one HTML body; absent only in legacy draft JSON.
+    pub html: Option<String>,
+    /// Legacy decode-only body. New writes never serialize Markdown truth.
     pub words: String,
+    /// Legacy decode-only discriminator.
     pub markdown: bool,
     pub earlier: Option<Earlier>,
     pub in_reply_to: Option<String>,
@@ -25,6 +29,81 @@ pub struct Unsent {
     pub headers_only: bool,
     /// Forwarded files left out, not downloaded.
     pub missing: usize,
+}
+
+impl<'de> Deserialize<'de> for Unsent {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Stored {
+            #[serde(default, deserialize_with = "body_version")]
+            body_version: u8,
+            to: Vec<String>,
+            cc: Vec<String>,
+            bcc: Vec<String>,
+            subject: String,
+            #[serde(default)]
+            html: Option<String>,
+            #[serde(default)]
+            words: String,
+            #[serde(default)]
+            markdown: bool,
+            earlier: Option<Earlier>,
+            in_reply_to: Option<String>,
+            references: Vec<String>,
+            headers_only: bool,
+            missing: usize,
+        }
+        fn body_version<'de, D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<u8, D::Error> {
+            let version = u64::deserialize(deserializer)?;
+            if version != 1 {
+                return Err(serde::de::Error::custom(format!("unsupported draft body version {version}")));
+            }
+            Ok(1)
+        }
+        let stored = Stored::deserialize(deserializer)?;
+        if stored.body_version == 1 && stored.html.is_none() {
+            return Err(serde::de::Error::custom("version-one draft is missing its HTML body"));
+        }
+        Ok(Self {
+            to: stored.to, cc: stored.cc, bcc: stored.bcc, subject: stored.subject,
+            html: stored.html, words: stored.words, markdown: stored.markdown,
+            earlier: stored.earlier, in_reply_to: stored.in_reply_to,
+            references: stored.references, headers_only: stored.headers_only, missing: stored.missing,
+        })
+    }
+}
+
+impl Unsent {
+    /// Visible text for draft listings; legacy bodies are imported only on reopening.
+    pub fn body_text(&self) -> String {
+        match &self.html {
+            Some(html) => crate::page::html(html, &[]).text(),
+            None => self.words.clone(),
+        }
+    }
+}
+
+impl Serialize for Unsent {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("to", &self.to)?;
+        map.serialize_entry("cc", &self.cc)?;
+        map.serialize_entry("bcc", &self.bcc)?;
+        map.serialize_entry("subject", &self.subject)?;
+        map.serialize_entry("body_version", &1u8)?;
+        let html = match &self.html {
+            Some(html) => std::borrow::Cow::Borrowed(html.as_str()),
+            None => std::borrow::Cow::Owned(crate::compose::legacy_draft_html(&self.words, self.markdown).map_err(serde::ser::Error::custom)?),
+        };
+        map.serialize_entry("html", html.as_ref())?;
+        map.serialize_entry("earlier", &self.earlier)?;
+        map.serialize_entry("in_reply_to", &self.in_reply_to)?;
+        map.serialize_entry("references", &self.references)?;
+        map.serialize_entry("headers_only", &self.headers_only)?;
+        map.serialize_entry("missing", &self.missing)?;
+        map.end()
+    }
 }
 
 /// Where the server holds a draft's copy.

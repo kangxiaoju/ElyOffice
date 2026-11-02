@@ -16,19 +16,17 @@ fn bare(address: &str, sent: u32) -> (Option<String>, String, u32) {
 
 fn sent_to(to: &[&str], cc: &[&str], bcc: &[&str]) -> Unsent {
     let own = |list: &[&str]| list.iter().map(|each| each.to_string()).collect();
-    Unsent {
-        to: own(to),
-        cc: own(cc),
-        bcc: own(bcc),
-        subject: "s".into(),
-        words: "w".into(),
-        markdown: false,
-        earlier: None,
-        in_reply_to: None,
-        references: Vec::new(),
-        headers_only: false,
-        missing: 0,
-    }
+    Unsent { html: Some("<p>w</p>".into()), to: own(to),
+    cc: own(cc),
+    bcc: own(bcc),
+    subject: "s".into(),
+    words: String::new(),
+    markdown: false,
+    earlier: None,
+    in_reply_to: None,
+    references: Vec::new(),
+    headers_only: false,
+    missing: 0, }
 }
 
 fn letter() -> Letter {

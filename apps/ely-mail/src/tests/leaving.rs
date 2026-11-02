@@ -60,7 +60,7 @@ fn write(compose: WindowHandle<Compose>, words: &str, cx: &mut VisualTestContext
     with(compose, cx, |compose, _, cx| {
         compose
             .document
-            .update(cx, |document, cx| document.set_text(words, cx))
+            .update(cx, |document, cx| document.set_document(ely_gpui_component::documents::email::EmailDocument::from_plain(words).unwrap(), cx).unwrap())
     });
 }
 
@@ -91,7 +91,7 @@ fn quit_keeps_each_message_then_goes() {
     gone(second, cx);
     let mut words: Vec<_> = kept(&mail, cx)
         .into_iter()
-        .map(|draft| draft.unsent.words)
+        .map(|draft| draft.unsent.body_text())
         .collect();
     words.sort();
     assert_eq!(words, ["one", "two"], "each went into Drafts");
@@ -230,7 +230,7 @@ fn the_drawn_close_keeps_as_the_system_close_does() {
     press_close(compose.into(), cx);
     gone(compose, cx);
     let [draft] = kept(&mail, cx).try_into().unwrap();
-    assert_eq!(draft.unsent.words, "words");
+    assert_eq!(draft.unsent.body_text(), "words");
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn a_success_keeps_edits_made_while_sending_as_a_draft() {
         let problem = cx.update(|_, app| compose.read(app).unwrap().problem.clone());
         assert_eq!(problem.map(|(severity, _)| severity), Some(Severity::Info));
         let [draft] = kept(&mail, cx).try_into().unwrap();
-        assert_eq!(draft.unsent.words, "before and late edit", "kept at once");
+        assert_eq!(draft.unsent.body_text(), "before and late edit", "kept at once");
         assert!(closes(compose, cx), "kept, it closes");
     }
 }
@@ -294,5 +294,5 @@ fn a_success_keeps_the_window_when_the_sender_changed() {
     let drafts = kept(&mail, cx);
     let draft = drafts.first().expect("kept");
     assert_eq!(draft.account, cy);
-    assert!(draft.unsent.markdown);
+    assert!(draft.unsent.html.is_some());
 }

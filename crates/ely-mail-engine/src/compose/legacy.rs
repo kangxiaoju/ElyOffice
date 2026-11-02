@@ -1,3 +1,4 @@
+//! Decode-only importer for drafts written before the native HTML editor.
 use std::collections::HashMap;
 
 use markdown::mdast::{Definition, Node};
@@ -240,12 +241,12 @@ impl Renderer<'_> {
                         };
                         let body = self.children(&item.children, html, "\n\n");
                         if html {
-                            let state = match item.checked {
-                                Some(true) => "<input type=\"checkbox\" checked disabled> ",
-                                Some(false) => "<input type=\"checkbox\" disabled> ",
+                            let attributes = match item.checked {
+                                Some(true) => " data-task=\"true\" data-checked=\"true\"",
+                                Some(false) => " data-task=\"true\" data-checked=\"false\"",
                                 None => "",
                             };
-                            format!("<li>{state}{body}</li>")
+                            format!("<li{attributes}>{body}</li>")
                         } else {
                             let marker = if list.ordered {
                                 format!("{}. ", u64::from(list.start.unwrap_or(1)) + index as u64)

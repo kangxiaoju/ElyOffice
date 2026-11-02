@@ -26,8 +26,8 @@ fn a_mail_link_opens_a_message_filled_from_it() {
         let out = compose
             .outgoing(&super::writing::draft(&["a@b.c"], "Hi there"), app)
             .unwrap();
-        assert!(out.markdown, "links open in the rich editor");
-        assert_eq!(out.words, ely_mail_engine::compose::rich_text("one\ntwo"));
+        assert!(!out.html.is_empty(), "links open in the HTML editor");
+        assert_eq!(out.text, "one\ntwo");
     });
 }
 
@@ -49,7 +49,7 @@ fn mailto_markdown_punctuation_stays_literal_when_sent() {
             .outgoing(&super::writing::draft(&["a@b.c"], ""), app)
             .unwrap()
     });
-    assert!(out.markdown);
+    assert!(!out.html.is_empty());
     let sent = ely_mail_engine::read(&prepare(&out).unwrap().bytes).unwrap();
     let html = sent.html.unwrap();
     assert!(html.contains("# Title"), "{html}");
