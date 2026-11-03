@@ -36,7 +36,11 @@ fn opened<'a>(
 
 /// Opens the Plus menu and checks the two operations are in their intended order.
 fn actions(cx: &mut VisualTestContext) -> [gpui::Bounds<gpui::Pixels>; 2] {
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
     let plus = cx.debug_bounds("mail-box-actions").expect("the Plus menu");
+    cx.simulate_mouse_move(plus.center(), None, Modifiers::none());
     cx.simulate_click(plus.center(), Modifiers::none());
     settle(cx, |_| true);
     let add = cx
@@ -72,6 +76,40 @@ fn the_plus_menu_opens_a_new_message() {
     cx.simulate_click(write.center(), Modifiers::none());
     super::writing::opened(cx);
     assert!(cx.update(|_, app| mail.read(app).open == selected));
+}
+
+#[test]
+fn embedded_plus_write_ignores_focus_outside_mail() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cx = TestAppContext::single();
+    let (mail, cx, _, _) = opened(dir.path(), &mut cx);
+    let host_focus = cx.update(|window, app| {
+        mail.update(app, |mail, _| mail.embedded = true);
+        let focus = app.focus_handle();
+        window.focus(&focus, app);
+        focus
+    });
+    let [_, write] = actions(cx);
+    cx.simulate_click(write.center(), Modifiers::none());
+    super::writing::opened(cx);
+    drop(host_focus);
+}
+
+#[test]
+fn embedded_plus_add_ignores_focus_outside_mail() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cx = TestAppContext::single();
+    let (mail, cx, _, _) = opened(dir.path(), &mut cx);
+    let host_focus = cx.update(|window, app| {
+        mail.update(app, |mail, _| mail.embedded = true);
+        let focus = app.focus_handle();
+        window.focus(&focus, app);
+        focus
+    });
+    let [add, _] = actions(cx);
+    cx.simulate_click(add.center(), Modifiers::none());
+    settle(cx, |app| mail.read(app).adding.is_some());
+    drop(host_focus);
 }
 
 #[test]

@@ -17,7 +17,6 @@ use ely_ui::menu::Offer;
 use crate::{
     boxes::Open,
     mail::{Mail, text},
-    menu,
 };
 
 /// The folder a menu was asked for.
@@ -173,16 +172,21 @@ impl Render for Side {
             .iter()
             .filter(|(id, _)| mail.folded.contains(id));
         let folded: Vec<String> = folded.map(|(_, account)| account.address.clone()).collect();
+        let (adding, writing) = (self.mail.clone(), self.mail.clone());
         let actions = Menu::new()
             .item(
                 MenuItem::new(text(cx, "mail.add.open", &[]))
                     .icon(IconName::Plus)
-                    .on_click(|window, cx| window.dispatch_action(Box::new(menu::AddAccount), cx)),
+                    .on_click(move |window, cx| {
+                        adding.update(cx, |mail, cx| mail.start_adding(window, cx)).ok();
+                    }),
             )
             .item(
                 MenuItem::new(text(cx, "mail.write.new", &[]))
                     .icon(IconName::Pencil)
-                    .on_click(|window, cx| window.dispatch_action(Box::new(menu::NewMessage), cx)),
+                    .on_click(move |_, cx| {
+                        writing.update(cx, |mail, cx| mail.write_new(cx)).ok();
+                    }),
             );
         let actions = OverflowMenu::new("mail-box-actions", actions)
             .icon(IconName::Plus)
