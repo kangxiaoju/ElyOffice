@@ -197,27 +197,36 @@ pub fn without_bcc(raw: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Mixed of the alternative bodies and the attachments.
+/// HTML and its CID resources stay related; ordinary files stay mixed attachments.
 fn body(draft: &Draft) -> Result<MimePart<'_>> {
     let text = MimePart::new("text/plain", draft.text.as_str());
     let body = match &draft.html {
         Some(html) => {
-            let html = MimePart::new("text/html", html.as_str());
+            let mut related = vec![MimePart::new("text/html", html.as_str())];
+            for part in draft.attachments.iter().filter(|part| cid_resource(part)) {
+                related.push(attachment(part, true)?);
+            }
+            let html = if related.len() == 1 { related.remove(0) } else {
+                MimePart::new(ContentType::new("multipart/related").attribute("type", "text/html"), related)
+            };
             MimePart::new("multipart/alternative", vec![text, html])
         }
         None => text,
     };
-    if draft.attachments.is_empty() {
-        return Ok(body);
-    }
     let mut parts = vec![body];
     for part in &draft.attachments {
-        parts.push(attachment(part)?);
+        if draft.html.is_none() || !cid_resource(part) {
+            parts.push(attachment(part, false)?);
+        }
     }
-    Ok(MimePart::new("multipart/mixed", parts))
+    if parts.len() == 1 { Ok(parts.remove(0)) } else { Ok(MimePart::new("multipart/mixed", parts)) }
 }
 
-fn attachment(part: &Part) -> Result<MimePart<'_>> {
+fn cid_resource(part: &Part) -> bool {
+    part.content_id.is_some() && part.content_type.get(..6).is_some_and(|prefix| prefix.eq_ignore_ascii_case("image/"))
+}
+
+fn attachment(part: &Part, inline: bool) -> Result<MimePart<'_>> {
     if let Some(name) = &part.name {
         line("a file name", name)?;
     }
@@ -239,11 +248,9 @@ fn attachment(part: &Part) -> Result<MimePart<'_>> {
     } else {
         MimePart::new(kind, part.bytes.as_slice())
     };
-    attachment = match &part.name {
-        Some(name) => attachment.attachment(name.as_str()),
-        // RFC 2183 §2.3: a name is optional.
-        None => attachment.header("Content-Disposition", ContentType::new("attachment")),
-    };
+    let mut disposition = ContentType::new(if inline { "inline" } else { "attachment" });
+    if let Some(name) = &part.name { disposition = disposition.attribute("filename", name.as_str()); }
+    attachment = attachment.header("Content-Disposition", disposition);
     if let Some(id) = &part.content_id {
         line("a content ID", id)?;
         attachment = attachment.cid(id.as_str());

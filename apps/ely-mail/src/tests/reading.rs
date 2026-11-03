@@ -177,6 +177,23 @@ fn an_html_letter_reads_without_running_or_loading() {
 }
 
 #[test]
+fn cid_image_in_legacy_attachment_is_rendered_without_remote_loading() {
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(16, 12, image::Rgba([40, 120, 200, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+    use base64::Engine as _;
+    let raw = format!("Content-Type: multipart/mixed; boundary=m\r\n\r\n--m\r\nContent-Type: text/html\r\n\r\n<p>Before</p><img src=\"cid:picture%40example.com\" alt=\"Picture\"><p>After</p>\r\n--m\r\nContent-Type: image/png\r\nContent-Disposition: attachment; filename=image.png\r\nContent-ID: <picture@example.com>\r\nContent-Transfer-Encoding: base64\r\n\r\n{}\r\n--m--\r\n", base64::engine::general_purpose::STANDARD.encode(&png));
+    let mail = ely_mail_engine::read(raw.as_bytes()).unwrap();
+    assert!(mail.inline.is_empty());
+    let words = Words { broken: "broken".into(), waiting: "waiting".into(), not_picture: "not picture".into(), svg: "svg".into(), unnamed: "unnamed".into() };
+    let body = letter::body(&[], mail, &words);
+    let url = body.blocks.iter().find_map(|block| match block { MarkdownBlock::Image { url, .. } => Some(url), _ => None }).unwrap();
+    assert!(matches!(body.pictures.get(url), Some(Ok(_))), "CID attachment must resolve to local image bytes");
+    assert!(body.remote.is_empty());
+    assert_eq!(body.files, [("image.png".to_owned(), Some(png.len() as u64))]);
+}
+
+#[test]
 fn allowed_pictures_come_and_a_trusted_sender_needs_no_asking() {
     let (web, served) = pictures();
     let dir = tempfile::tempdir().unwrap();

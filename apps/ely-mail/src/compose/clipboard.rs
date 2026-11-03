@@ -268,9 +268,12 @@ mod tests {
             in_reply_to: None, references: Vec::new(), date: 1_704_099_600,
         }).unwrap();
         let read = ely_mail_engine::read(&built.bytes).unwrap();
-        assert!(read.html.unwrap().contains(&image.source));
-        let inline = read.inline.iter().chain(&read.attachments).find(|found| found.content_id == part.content_id).unwrap();
+        assert!(read.html.as_ref().unwrap().contains(&image.source));
+        let inline = read.inline.iter().find(|found| found.content_id == part.content_id).expect("sent CID image must be an inline MIME resource");
         assert_eq!(inline.bytes, png);
+        let page = ely_mail_engine::page::read(&read.shown, &read.inline);
+        assert!(matches!(&page.blocks[0], ely_mail_engine::page::Block::Image(image) if matches!(image.source, ely_mail_engine::page::Source::Inline(_))));
+        assert!(read.attachments.is_empty());
     }
 
 }

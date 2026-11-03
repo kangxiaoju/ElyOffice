@@ -338,3 +338,31 @@ fn mixed_bodies_read_in_order_and_alternatives_once() {
         ]
     );
 }
+
+#[test]
+fn built_html_cid_images_are_related_while_other_files_remain_attachments() {
+    let address = |email: &str| Mailbox { name: None, email: email.into() };
+    let draft = Draft {
+        from: address("sender@example.com"), to: vec![address("reader@example.com")],
+        cc: Vec::new(), bcc: Vec::new(), subject: "Inline and ordinary files".into(),
+        text: "Picture".into(), html: Some("<img src=\"cid:picture@example.com\">".into()),
+        attachments: vec![
+            part(Some("inline.png"), "image/png", Some("picture@example.com"), b"inline bytes"),
+            part(Some("report.pdf"), "application/pdf", Some("report@example.com"), b"pdf bytes"),
+            part(Some("download.png"), "image/png", None, b"download bytes"),
+        ],
+        in_reply_to: None, references: Vec::new(), date: 1_704_099_600,
+    };
+    let built = build(&draft).unwrap();
+    let mail = read(&built.bytes).unwrap();
+    assert_eq!(mail.inline.len(), 1);
+    assert_eq!(mail.inline[0].content_id.as_deref(), Some("picture@example.com"));
+    assert_eq!(mail.inline[0].bytes, b"inline bytes");
+    assert_eq!(mail.attachments.iter().map(|p| (p.name.as_deref(), p.bytes.as_slice())).collect::<Vec<_>>(),
+        [(Some("report.pdf"), b"pdf bytes".as_slice()), (Some("download.png"), b"download bytes".as_slice())]);
+    use mail_parser::MimeHeaders as _;
+    let parsed = mail_parser::MessageParser::default().parse(&built.bytes).unwrap();
+    let resource = parsed.parts.iter().find(|p| p.content_id() == Some("picture@example.com")).unwrap();
+    assert_eq!(resource.content_disposition().unwrap().c_type, "inline");
+    assert!(parsed.parts.iter().any(|p| p.content_type().is_some_and(|t| t.c_type == "multipart" && t.c_subtype.as_deref() == Some("related"))));
+}
