@@ -17,6 +17,8 @@ Download from [office.elygpui.com](https://office.elygpui.com) or the [latest re
 
 ElyMail signs in to Microsoft with OAuth, and to Gmail and iCloud with an app password.
 
+Yu's `fix/yu-workspace-components` branch keeps its current Office client/worker protocol and aligns the component pin with the upstream-synchronized Yu components. Full Office upstream integration is published separately on `sync/ai-workspace-polish`; it requires matching LOK/PDF worker releases before Yu can adopt it.
+
 ## Build
 
 ```sh
