@@ -19,6 +19,8 @@ ElyMail signs in to Microsoft with OAuth, and to Gmail and iCloud with an app pa
 
 Yu's `fix/yu-workspace-components` branch keeps its current Office client/worker protocol and aligns the component pin with the upstream-synchronized Yu components. Full Office upstream integration is published separately on `sync/ai-workspace-polish`; it requires matching LOK/PDF worker releases before Yu can adopt it.
 
+`perf/yu-component-pacing` advances only that component pin to include optional `Spinner::max_fps`; Office implementations and worker protocols remain unchanged.
+
 ## Build
 
 ```sh
