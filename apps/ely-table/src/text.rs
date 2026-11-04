@@ -55,11 +55,11 @@ struct Scan {
 }
 
 impl Pending {
-    pub(crate) fn new(path: PathBuf, bytes: Vec<u8>, chinese: bool) -> Self {
+    pub(crate) fn new(path: PathBuf, bytes: Vec<u8>, legacy: Encoding) -> Self {
         let how = Import {
             separator: guess_separator(&path, &bytes),
             quote: Some('"'),
-            encoding: guess_encoding(&bytes, chinese),
+            encoding: guess_encoding(&bytes, legacy),
             columns: Vec::new(),
         };
         Pending {
@@ -105,14 +105,24 @@ fn scan(bytes: &[u8], how: &Import) -> Scan {
     }
 }
 
-fn guess_encoding(sample: &[u8], chinese: bool) -> Encoding {
+/// The Windows code page of the app's language.
+pub(crate) fn legacy_encoding(locale: &str) -> Encoding {
+    match locale {
+        "zh-CN" => Encoding::Gb18030,
+        "ja-JP" => Encoding::ShiftJis,
+        "ko-KR" => Encoding::Windows949,
+        "vi-VN" => Encoding::Windows1258,
+        _ => Encoding::Windows1252,
+    }
+}
+
+fn guess_encoding(sample: &[u8], legacy: Encoding) -> Encoding {
     if sample.starts_with(&[0xFF, 0xFE]) || sample.starts_with(&[0xFE, 0xFF]) {
         return Encoding::Utf16;
     }
     match std::str::from_utf8(sample) {
         Ok(_) => Encoding::Utf8,
-        Err(_) if chinese => Encoding::Gb18030,
-        Err(_) => Encoding::Windows1252,
+        Err(_) => legacy,
     }
 }
 
@@ -142,9 +152,11 @@ fn decode(bytes: &[u8], encoding: Encoding) -> Option<String> {
         Encoding::Gb18030 => (encoding_rs::GB18030, &[]),
         Encoding::Big5 => (encoding_rs::BIG5, &[]),
         Encoding::ShiftJis => (encoding_rs::SHIFT_JIS, &[]),
-        Encoding::EucKr => (encoding_rs::EUC_KR, &[]),
+        // WHATWG's EUC-KR is Windows-949.
+        Encoding::Windows949 => (encoding_rs::EUC_KR, &[]),
         Encoding::Windows1252 => (encoding_rs::WINDOWS_1252, &[]),
         Encoding::Windows1251 => (encoding_rs::WINDOWS_1251, &[]),
+        Encoding::Windows1258 => (encoding_rs::WINDOWS_1258, &[]),
         // Latin-1 maps each byte to its code point.
         Encoding::Latin1 => return Some(bytes.iter().map(|byte| char::from(*byte)).collect()),
     };
@@ -232,12 +244,12 @@ impl Book {
     pub(crate) fn ask_import(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let reading = path.clone();
         // The language the app shows, not the system's.
-        let chinese = cx.global::<ely_gpui_component::i18n::I18n>().locale().tag == "zh-CN";
+        let legacy = legacy_encoding(cx.global::<ely_gpui_component::i18n::I18n>().locale().tag);
         cx.spawn(async move |this, cx| {
             // Guessing checks the whole file: off the window thread.
             let pending = cx
                 .background_spawn(async move {
-                    std::fs::read(&reading).map(|bytes| Pending::new(reading, bytes, chinese))
+                    std::fs::read(&reading).map(|bytes| Pending::new(reading, bytes, legacy))
                 })
                 .await;
             in_window(&this, cx, |book, _, cx| match pending {
@@ -348,10 +360,40 @@ mod tests {
         assert_eq!(guess_separator(csv, b"a;b;c,d\n1;2"), ';');
         assert_eq!(guess_separator(csv, b"one\n"), ',');
         assert_eq!(guess_separator(Path::new("a.TSV"), b"a,b"), '\t');
-        assert_eq!(guess_encoding("名称".as_bytes(), false), Encoding::Utf8);
-        assert_eq!(guess_encoding(&[0xC3, 0xFB], true), Encoding::Gb18030);
-        assert_eq!(guess_encoding(&[0xC3, 0xFB], false), Encoding::Windows1252);
-        assert_eq!(guess_encoding(&[0xFF, 0xFE, b'a', 0], false), Encoding::Utf16);
+        assert_eq!(guess_encoding("名称".as_bytes(), Encoding::Gb18030), Encoding::Utf8);
+        assert_eq!(guess_encoding(&[0xC3, 0xFB], Encoding::Gb18030), Encoding::Gb18030);
+        assert_eq!(guess_encoding(&[0xC3, 0xFB], Encoding::Windows1252), Encoding::Windows1252);
+        assert_eq!(guess_encoding(b"Cr\xe8me;br\xfbl\xe9e\n", Encoding::Windows1252), Encoding::Windows1252);
+        assert_eq!(guess_encoding(b"Gr\xfc\xdfe;K\xf6ln\n", Encoding::Windows1252), Encoding::Windows1252);
+        assert_eq!(guess_encoding(&[0xFF, 0xFE, b'a', 0], Encoding::Gb18030), Encoding::Utf16);
+    }
+
+    #[test]
+    fn each_language_names_its_windows_code_page() {
+        // Excel saves CSV in the system's ANSI code page.
+        let pages = [
+            ("de-DE", Encoding::Windows1252),
+            ("en-US", Encoding::Windows1252),
+            ("es-ES", Encoding::Windows1252),
+            ("fr-FR", Encoding::Windows1252),
+            ("ja-JP", Encoding::ShiftJis),
+            ("ko-KR", Encoding::Windows949),
+            ("vi-VN", Encoding::Windows1258),
+            ("zh-CN", Encoding::Gb18030),
+        ];
+        let listed: Vec<_> = ely_platform::settings::LANGUAGES.iter().map(|(tag, _)| *tag).collect();
+        assert_eq!(pages.map(|(tag, _)| tag).to_vec(), listed, "a new language picks its page");
+        for (tag, page) in pages {
+            assert_eq!(legacy_encoding(tag), page, "{tag}");
+        }
+    }
+
+    #[test]
+    fn shift_jis_reads_as_windows_932() {
+        // Windows-932 alone maps ①, ㈱ and fullwidth tilde.
+        let excel = [0x87, 0x40, 0x87, 0x8A, 0x81, 0x60, 0x93, 0xFA, 0x96, 0x7B];
+        assert_eq!(decode(&excel, Encoding::ShiftJis).as_deref(), Some("①㈱～日本"));
+        assert_eq!(guess_encoding(&excel, legacy_encoding("ja-JP")), Encoding::ShiftJis);
     }
 
     #[test]

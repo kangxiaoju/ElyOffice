@@ -1,14 +1,17 @@
 //! Tabs, page, status line and side panel.
 
 use ely_gpui_component::{
-    feedback::{Banner, EmptyState},
+    feedback::Banner,
+    forms::Choice,
+    navigation::Tabs as TabStrip,
     primitives::{IconName, Severity},
     shell::{StatusBar, StatusBarItem},
 };
 use ely_lok::LokView;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, AnyView, Context, Entity, IntoElement, ParentElement as _, Styled as _, div,
+    AnyElement, AnyView, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
+    WeakEntity, Window, div,
 };
 
 use ely_office::prelude::*;
@@ -57,11 +60,7 @@ impl Docs {
                 .child(div().flex_1().min_h_0().child(view))
                 .into_any_element();
         }
-        let title = match self.core.loading.first() {
-            Some((_, name)) => Self::text(cx, "office.loading", &[("name", name)]),
-            None => Self::text(cx, "command.blocked.no_document", &[]),
-        };
-        EmptyState::new("doc-empty", IconName::FileText, title).into_any_element()
+        self.empty_body("doc-empty", IconName::FileText, cx)
     }
 
     /// The navigator column, while shown.
@@ -87,11 +86,7 @@ impl Docs {
         self.props.update(cx, |props, cx| props.show(tab, cx));
         self.review.update(cx, |review, cx| review.show(tab, cx));
         shown.as_ref()?;
-        Some(match self.side {
-            Side::Props => self.props.clone().into(),
-            Side::Review => self.review.clone().into(),
-            Side::Merge => self.merge.clone().into(),
-        })
+        Some(self.column.clone().into())
     }
 
     /// Reads the counts, again when the kernel's count moves.
@@ -137,5 +132,52 @@ impl Docs {
             },
             cx,
         );
+    }
+}
+
+/// The right column: panel tabs, then the chosen panel.
+pub struct Column {
+    pub docs: WeakEntity<Docs>,
+}
+
+impl Render for Column {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(docs) = self.docs.upgrade() else {
+            return div().into_any_element();
+        };
+        let read = docs.read(cx);
+        let (side, panel): (Side, AnyView) = match read.side {
+            Side::Props => (Side::Props, read.props.clone().into()),
+            Side::Review => (Side::Review, read.review.clone().into()),
+            Side::Merge => (Side::Merge, read.merge.clone().into()),
+        };
+        let text = |key: &str| Docs::text(cx, key, &[]);
+        let tabs = [
+            Choice::new("props", text("menu.format")),
+            Choice::new("review", text("menu.review")),
+            Choice::new("merge", text("doc.merge.title")),
+        ];
+        let chosen = match side {
+            Side::Props => "props",
+            Side::Review => "review",
+            Side::Merge => "merge",
+        };
+        let this = self.docs.clone();
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(TabStrip::new("doc-side", tabs, chosen).on_change(move |value, _, cx| {
+                let side = match value.as_ref() {
+                    "review" => Side::Review,
+                    "merge" => Side::Merge,
+                    _ => Side::Props,
+                };
+                if let Some(docs) = this.upgrade() {
+                    docs.update(cx, |docs, cx| docs.show_side(side, cx));
+                }
+            }))
+            .child(div().flex_1().min_h_0().child(panel))
+            .into_any_element()
     }
 }

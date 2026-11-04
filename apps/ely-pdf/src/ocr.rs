@@ -63,7 +63,7 @@ pub fn pages(scope: Scope, current: usize, (from, to): (usize, usize), count: us
 
 impl Viewer {
     pub fn ask_ocr(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        let (Some(tab), Some(view)) = (self.core.active, self.active_view()) else {
+        let (Some(tab), Some(view)) = (self.core.active(), self.active_view()) else {
             return self.no_document(cx);
         };
         let count = view.read(cx).sizes.len();
@@ -166,7 +166,7 @@ impl Viewer {
             return self.toast(summary, Severity::Info, cx);
         };
         let laid = self.on_same(&view, run.version, cx, |view, cx| {
-            view.edit("adding recognised text", move |worker, doc| worker.text_layer(doc, &pages, replace), cx)
+            view.edit("pdf.doing.add_ocr", move |worker, doc| worker.text_layer(doc, &pages, replace), cx)
         });
         if laid {
             self.toast(summary, Severity::Success, cx);

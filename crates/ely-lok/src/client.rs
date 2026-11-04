@@ -5,6 +5,7 @@ use std::{
     sync::mpsc,
 };
 
+use crate::handshake::Check;
 use crate::ipc::{self, Pack, Unpack, tag};
 
 pub use crate::events::{A11y, Cell, Events, Function, MIXED, Mark, Rect, Request};
@@ -17,7 +18,12 @@ mod feed;
 mod frames;
 mod install;
 mod load;
+pub use load::Damaged;
+mod stop;
 pub use install::{install_dir, templates};
+pub use stop::Stopper;
+#[cfg(any(test, feature = "test-support"))]
+pub use install::test_install;
 use install::worker_bin;
 pub use doc::{Pdf, Sheet, Sheets};
 pub use feed::Feed;
@@ -37,16 +43,12 @@ pub struct Worker {
     /// This worker among all spawned; its documents carry it.
     session: u64,
     stderr: ely_ipc::Relay,
-    check: Check,
+    pub(crate) check: Check,
+    pub(crate) stopper: Stopper,
     /// The name new comments sign with, once set.
     author: Option<String>,
-}
-
-/// The start-up check: to run, passed, or why it failed.
-enum Check {
-    Pending(PathBuf),
-    Passed,
-    Failed(String),
+    /// The build, profile and probes it started with.
+    start: (PathBuf, PathBuf, bool),
 }
 
 /// One painted tile and the generation it matches (LOK-03).
@@ -134,28 +136,6 @@ impl Worker {
         Ok(worker)
     }
 
-    /// Checks the pinned build and tiles, once (LOK-01).
-    pub fn ready(&mut self) -> io::Result<()> {
-        let profile = match &self.check {
-            Check::Passed => return Ok(()),
-            Check::Failed(why) => return Err(io::Error::other(format!("the worker failed its check: {why}"))),
-            Check::Pending(profile) => profile.clone(),
-        };
-        // Marked first: the checks' own requests pass through here.
-        self.check = Check::Passed;
-        let checked = self.version_checked().and_then(|build| self.verify(&build, &profile).map(|()| build));
-        match checked {
-            Ok(build) => {
-                log::info!("lok: worker up, {build}");
-                Ok(())
-            }
-            Err(error) => {
-                self.check = Check::Failed(error.to_string());
-                Err(error)
-            }
-        }
-    }
-
     /// Spawns with or without the dev probes.
     fn spawn_mode(worker_bin: &Path, install: &Path, profile_dir: &Path, dev: bool) -> io::Result<Self> {
         std::fs::create_dir_all(profile_dir)?;
@@ -202,8 +182,10 @@ impl Worker {
         let (feed, (sender, replies)) = (Feed::default(), mpsc::channel());
         let reading = feed.clone();
         std::thread::spawn(move || frames::read_frames(BufReader::new(stdout), &reading, &sender));
+        let stopper = Stopper::new(child.id());
         let worker = Self {
             child,
+            stopper,
             stdin: BufWriter::new(stdin),
             replies,
             feed,
@@ -213,6 +195,7 @@ impl Worker {
             stderr,
             check: Check::Pending(profile_dir.to_path_buf()),
             author: None,
+            start: (install.to_path_buf(), profile_dir.to_path_buf(), dev),
         };
         Ok(worker)
     }
@@ -358,8 +341,14 @@ impl Worker {
 
     /// `doc` as of now: commands by number use this revision.
     pub fn now(&mut self, doc: &Doc) -> io::Result<Doc> {
+        Ok(Doc { rev: self.state(doc)?.0, ..doc.clone() })
+    }
+
+    /// `doc`'s revision, tile generation, and whether the kernel is blind.
+    pub(crate) fn state(&mut self, doc: &Doc) -> io::Result<(u64, u64, bool)> {
         let payload = self.request(tag::REVISION, &Pack::new().u64(self.doc_id(doc)?).bytes())?;
-        Ok(Doc { rev: Unpack::new(&payload).u64()?, ..doc.clone() })
+        let mut unpack = Unpack::new(&payload);
+        Ok((unpack.u64()?, unpack.u64()?, unpack.u64()? != 0))
     }
 
     /// `doc`'s number here; another worker's document is refused.
@@ -388,10 +377,17 @@ impl Worker {
 
     /// A worker whose output failed: stopped, reaped, and why.
     fn broken(&mut self, request: u8, error: io::Error) -> io::Error {
+        *self.stopper.gate() = true;
         let _ = self.child.kill();
         let status = self.child.wait().map(|status| status.to_string()).unwrap_or_else(|wait| wait.to_string());
-        log::error!("lok: the worker failed on request {request} ({status})");
-        let said = self.stderr.last_error().map_or_else(String::new, |said| format!(": {said}"));
+        let said = self.stderr.said();
+        // Before the check passes no document is open.
+        let said = match (&self.check, said.line, said.error) {
+            (Check::Checking, Some(line), _) => format!(": {line}"),
+            (_, _, Some(error)) => format!(": {error}"),
+            _ => String::new(),
+        };
+        log::error!("lok: the worker failed on request {request} ({status}){said}");
         io::Error::new(error.kind(), format!("the lok worker failed: {error} ({status}){said}"))
     }
 
@@ -421,14 +417,6 @@ impl Worker {
         }
     }
 
-    /// Why the worker process ended, if it has.
-    pub fn ended(&mut self) -> Option<String> {
-        match self.child.try_wait() {
-            Ok(status) => status.map(|status| status.to_string()),
-            Err(error) => Some(error.to_string()),
-        }
-    }
-
     /// Closes the document in the worker.
     pub fn close_doc(&mut self, doc: Doc) -> io::Result<()> {
         self.request(tag::CLOSE_DOC, &Pack::new().u64(self.doc_id(&doc)?).bytes())?;
@@ -446,6 +434,7 @@ impl Worker {
         if outcome.is_err() {
             let _ = self.child.kill();
         }
+        *self.stopper.gate() = true;
         let status = match self.child.wait() {
             Ok(status) => status,
             Err(error) => {

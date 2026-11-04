@@ -5,9 +5,24 @@ use ely_gpui_component::{
     navigation::{EditorTab, EditorTabs},
     primitives::Severity,
 };
-use gpui::{Context, SharedString};
+use gpui::{Context, SharedString, Window};
 
-use crate::{After, Closing, Host, Tabs, text};
+use crate::{After, Closing, Engine, Host, Tabs, text};
+
+/// A tab switch: the one behind stops drawing.
+pub(crate) fn follow_front<H: Host>(host: &mut H, cx: &mut Context<H>) {
+    let front = host.core().active();
+    let behind = std::mem::replace(&mut host.core_mut().shown, front);
+    if behind == front {
+        return;
+    }
+    if let Some(tab) = behind.and_then(|id| host.tab(id)) {
+        <H::Engine as Engine>::hide(&tab.view, cx);
+    }
+    if let Some(id) = front {
+        host.tab_shown(id, cx);
+    }
+}
 
 pub trait Chrome: Host {
     fn tab_strip(&self, cx: &mut Context<Self>) -> EditorTabs {
@@ -20,16 +35,13 @@ pub trait Chrome: Host {
         let loading = core
             .loading
             .iter()
-            .map(|(id, name)| EditorTab::new(id.to_string(), name.clone()).preview(true));
+            .map(|(id, name, _)| EditorTab::new(id.to_string(), name.clone()).preview(true));
         let tabs = EditorTabs::new("office-tabs", open.chain(loading).collect::<Vec<_>>())
             .on_select({
                 let this = this.clone();
-                move |id, _, cx| {
+                move |id, window, cx| {
                     let id = id.parse().expect("tab ids are numbers");
-                    this.update(cx, |host, cx| {
-                        host.core_mut().active = Some(id);
-                        cx.notify();
-                    });
+                    this.update(cx, |host, cx| host.show_tab(id, window, cx));
                 }
             })
             .on_close(move |id, window, cx| {
@@ -38,10 +50,20 @@ pub trait Chrome: Host {
                     host.request_close(id, After::Tab, window, cx)
                 });
             });
-        match core.active {
+        match core.active() {
             Some(id) => tabs.selected(id.to_string()),
             None => tabs,
         }
+    }
+
+    /// The tab the user picked comes forward with the keys.
+    fn show_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.core_mut().set_active(Some(id));
+        if let Some(tab) = self.active_tab() {
+            log::info!("{}: tab {id} picked", Self::KIND.app.slug());
+            window.focus(&<Self::Engine as Engine>::focus(tab.view.read(cx)), cx);
+        }
+        cx.notify();
     }
 
     /// The macro warning over a risky document (LOK-11).
@@ -63,7 +85,7 @@ pub trait Chrome: Host {
     fn save_state(&self, cx: &mut Context<Self>) -> SharedString {
         match (self.active_tab(), self.core().loading.first()) {
             (Some(tab), _) => text(cx, tab.state_key(cx), &[]),
-            (None, Some((_, name))) => text(cx, "office.loading", &[("name", name)]),
+            (None, Some((_, name, _))) => text(cx, "office.loading", &[("name", name)]),
             (None, None) => SharedString::default(),
         }
     }

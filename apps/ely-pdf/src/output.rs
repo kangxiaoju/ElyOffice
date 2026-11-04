@@ -1,6 +1,6 @@
 //! Export, print, and the repaired copy's report (PDF-13, PDF-14).
 
-use std::{io, path::PathBuf};
+use std::path::PathBuf;
 
 use ely_gpui_component::{
     buttons::{Button, ButtonVariant, SegmentedControl},
@@ -30,7 +30,7 @@ impl PdfView {
                     (view.repair, view.damage_seen) = (report, true);
                     cx.emit(Reported);
                 }
-                Err(error) => view.fail("reading the damage report", &error, cx),
+                Err(error) => view.fail("pdf.doing.damage", &error, cx),
             },
             cx,
         );
@@ -66,7 +66,7 @@ fn stem(name: &str) -> String {
 
 impl Viewer {
     pub fn on_export(&mut self, _: &Export, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(tab) = self.core.active else {
+        let Some(tab) = self.core.active() else {
             return self.no_document(cx);
         };
         let how = Optimizing { compress: true, from: 300, to: 150 };
@@ -75,7 +75,7 @@ impl Viewer {
     }
 
     pub fn on_print(&mut self, _: &Print, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(tab) = self.core.active else {
+        let Some(tab) = self.core.active() else {
             return self.no_document(cx);
         };
         self.print(tab, cx);
@@ -112,7 +112,7 @@ impl Viewer {
             return;
         };
         let Some(dir) = ely_office::folder(tab) else {
-            return self.panel_failed("no documents folder", cx);
+            return self.panel_failed(&ely_ui::i18n::text(cx, "error.no_documents", &[]), cx);
         };
         let (id, stem) = (asked.tab, stem(&tab.name));
         if asked.kind == Kind::Images {
@@ -168,12 +168,11 @@ impl Viewer {
                     crate::ask::copy_into(&work, file)
                 });
                 // A failure leaves none of this run's files.
-                if let Err(error) = &written
-                    && let Err(left) = targets.iter().try_for_each(std::fs::remove_file)
-                {
-                    return Err(io::Error::other(format!("{error}; then {left}")));
-                }
-                written.map(|()| targets.len())
+                written.map_err(|error| match targets.iter().try_for_each(std::fs::remove_file) {
+                    Ok(()) => error,
+                    Err(left) => ely_ipc::Worded::then(error, left),
+                })?;
+                Ok(targets.len())
             },
             move |viewer, done, _, cx| match done {
                 Ok(count) => {
@@ -363,8 +362,8 @@ impl Viewer {
                 .on_change(toggled(|how, on| (how.from, how.to) = if on { (300, 150) } else { (300, 0) })),
         );
         if shrink {
-            let from = NumberInput::new("pdf-export-from", f64::from(how.from)).range(72.0, 2400.0).suffix("dpi").label(Self::text(cx, "pdf.export.above", &[]));
-            let to = NumberInput::new("pdf-export-to", f64::from(how.to)).range(36.0, 1200.0).suffix("dpi").label(Self::text(cx, "pdf.export.to", &[]));
+            let from = NumberInput::new("pdf-export-from", f64::from(how.from)).range(72.0, 2400.0).suffix(Self::text(cx, "pdf.export.dpi", &[])).label(Self::text(cx, "pdf.export.above", &[]));
+            let to = NumberInput::new("pdf-export-to", f64::from(how.to)).range(36.0, 1200.0).suffix(Self::text(cx, "pdf.export.dpi", &[])).label(Self::text(cx, "pdf.export.to", &[]));
             let list = DescriptionList::new()
                 .item(Self::text(cx, "pdf.export.above", &[]), from.on_change(set(|how, value| how.from = value.round() as u32)))
                 .item(Self::text(cx, "pdf.export.to", &[]), to.on_change(set(|how, value| how.to = value.round() as u32)));

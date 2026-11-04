@@ -34,6 +34,7 @@ apps/ely-mark/src/desk.rs	expect_used	self.caret_said(cx).expect("a tab")	linux,
 apps/ely-mark/src/desk.rs	expect_used	tab.doc.lock().expect("the text lock")	linux,macos,windows	the text lock
 apps/ely-mark/src/engine.rs	expect_used	doc.lock().expect("the text lock")	linux,macos,windows	the text lock
 apps/ely-mark/src/engine.rs	expect_used	doc.lock().expect("the text lock")	linux,macos,windows	the text lock
+apps/ely-mark/src/engine.rs	expect_used	doc.lock().expect("the text lock")	linux,macos,windows	the text lock
 apps/ely-mark/src/export/mod.rs	expect_used	FORMATS .iter() .find(|(each, ..)| *each == format) .expect("listed")	linux,macos,windows	listed
 apps/ely-mark/src/export/mod.rs	expect_used	FORMATS .iter() .find(|(each, ..)| *each == format) .expect("listed")	linux,macos,windows	listed
 apps/ely-mark/src/look.rs	expect_used	closer.borrow().clone().expect("the dialog gave its closer")	linux,macos,windows	the dialog gave its closer
@@ -56,10 +57,9 @@ apps/ely-mark/src/output/pictures.rs	unreachable	unreachable!("names never run o
 apps/ely-mark/src/output/pictures.rs	unreachable	unreachable!("written addresses are not carried")	linux,macos,windows	written addresses are not carried
 apps/ely-mark/src/output/plain.rs	expect_used	node.children().expect("an inline run holds inlines")	linux,macos,windows	an inline run holds inlines
 apps/ely-mark/src/output/plain.rs	unreachable	unreachable!("an HTML block reads as text, not {other:?}")	linux,macos,windows	an HTML block reads as text, not {other:?}
-apps/ely-mark/src/outside.rs	expect_used	self.tab_mut(id).expect("open")	linux,macos,windows	open
 apps/ely-mark/src/outside.rs	expect_used	tab.doc.lock().expect("the text lock")	linux,macos,windows	the text lock
 apps/ely-mark/src/outside.rs	expect_used	tab.doc.lock().expect("the text lock")	linux,macos,windows	the text lock
-apps/ely-mark/src/outside.rs	expect_used	tab.doc.lock().expect("the text lock")	linux,macos,windows	the text lock
+apps/ely-mark/src/outside/disk.rs	expect_used	tab.doc.lock().expect("the text lock")	linux,macos,windows	the text lock
 apps/ely-mark/src/paths.rs	expect_used	id.parse().expect("tab ids are numbers")	linux,macos,windows	tab ids are numbers
 apps/ely-mark/src/places.rs	expect_used	self.tab(id)? .doc .lock() .expect("the text lock")	linux,macos,windows	the text lock
 apps/ely-mark/src/restore.rs	expect_used	(self.keeping.turns.write(turn, || save(&file, &json))) .expect("this thread took the newest turn")	linux,macos,windows	this thread took the newest turn
@@ -188,6 +188,9 @@ crates/ely-lok/src/events.rs	expect_used	slots().lock().expect("the events lock"
 crates/ely-lok/src/events.rs	expect_used	slots().lock().expect("the events lock")	linux,macos,windows	the events lock
 crates/ely-lok/src/events.rs	expect_used	slots().lock().expect("the events lock")	linux,macos,windows	the events lock
 crates/ely-lok/src/events/cell.rs	expect_used	super::slots().lock().expect("the events lock")	linux,macos,windows	the events lock
+crates/ely-lok/src/events/painted.rs	expect_used	slots().lock().expect("the events lock")	linux,macos,windows	the events lock
+crates/ely-lok/src/events/painted.rs	expect_used	slots().lock().expect("the events lock")	linux,macos,windows	the events lock
+crates/ely-lok/src/events/painted.rs	expect_used	slots().lock().expect("the events lock")	linux,macos,windows	the events lock
 crates/ely-lok/src/ffi.rs	expect_used	cstring(password).expect("no NUL")	linux,macos,windows	no NUL
 crates/ely-lok/src/ffi.rs	expect_used	cstring(url).expect("a url without NUL")	linux,macos,windows	a url without NUL
 crates/ely-lok/src/ffi.rs	expect_used	cstring(url).expect("a url")	linux,macos,windows	a url
@@ -199,25 +202,26 @@ crates/ely-lok/src/show/layers.rs	expect_used	pixels.expect("checked above")	lin
 crates/ely-lok/src/show/layers.rs	expect_used	pixels.take().expect("checked above")	linux,macos,windows	checked above
 crates/ely-lok/src/show/parts.rs	expect_used	serde_json::from_str(&look.to_json()).expect("a look is JSON")	linux,macos,windows	a look is JSON
 crates/ely-lok/src/view.rs	expect_used	self.lane .tiles .unbounded_send(job) .expect("the lane lives with the view")	linux,macos,windows	the lane lives with the view
-crates/ely-lok/src/view.rs	expect_used	self.worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
 crates/ely-lok/src/view/formula.rs	expect_used	vcl_key(keystroke).expect("Enter and Tab are vcl keys")	linux,macos,windows	Enter and Tab are vcl keys
 crates/ely-lok/src/view/input.rs	expect_used	Keystroke::parse("shift-tab").expect("a keystroke")	linux,macos,windows	a keystroke
 crates/ely-lok/src/view/input.rs	expect_used	Keystroke::parse("tab").expect("a keystroke")	linux,macos,windows	a keystroke
 crates/ely-lok/src/view/input.rs	expect_used	self.lane .inputs .unbounded_send((self.sent, input, Instant::now())) .expect("the input queue lives with the view")	linux,macos,windows	the input queue lives with the view
-crates/ely-lok/src/view/input.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
 crates/ely-lok/src/view/lane.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
+crates/ely-lok/src/view/lane.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
+crates/ely-lok/src/view/off.rs	expect_used	TURNS.lock().expect("the turns")	linux,macos,windows	the turns
 crates/ely-lok/src/view/off.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
+crates/ely-lok/src/view/reveal.rs	expect_used	wanted.lock().expect("the wanted lock")	linux,macos,windows	the wanted lock
 crates/ely-lok/src/view/sheet.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
 crates/ely-lok/src/worker.rs	expect_used	OUT.get().expect("the output is set")	linux,macos,windows	the output is set
 crates/ely-lok/src/worker.rs	expect_used	docs().lock().expect("the docs lock")	linux,macos,windows	the docs lock
 crates/ely-lok/src/worker.rs	expect_used	docs().lock().expect("the docs lock")	linux,macos,windows	the docs lock
 crates/ely-lok/src/worker.rs	expect_used	docs().lock().expect("the docs lock")	linux,macos,windows	the docs lock
 crates/ely-lok/src/worker.rs	expect_used	out.lock().expect("the output lock")	linux,macos,windows	the output lock
+crates/ely-lok/src/worker/asked.rs	expect_used	GIVEN.lock().expect("the password lock")	linux,macos,windows	the password lock
+crates/ely-lok/src/worker/asked.rs	expect_used	GIVEN.lock().expect("the password lock")	linux,macos,windows	the password lock
 crates/ely-lok/src/worker/events.rs	expect_used	OUT.get().expect("the output is set")	linux,macos,windows	the output is set
 crates/ely-lok/src/worker/events.rs	expect_used	out.lock().expect("the output lock")	linux,macos,windows	the output lock
 crates/ely-lok/src/worker/input.rs	expect_used	command.split('?').next().expect("split has a first part")	linux,macos,windows	split has a first part
-crates/ely-lok/src/worker/password.rs	expect_used	GIVEN.lock().expect("the password lock")	linux,macos,windows	the password lock
-crates/ely-lok/src/worker/password.rs	expect_used	GIVEN.lock().expect("the password lock")	linux,macos,windows	the password lock
 crates/ely-lok/src/worker/revision.rs	expect_used	revisions().lock().expect("the revisions lock")	linux,macos,windows	the revisions lock
 crates/ely-lok/src/worker/revision.rs	expect_used	revisions().lock().expect("the revisions lock")	linux,macos,windows	the revisions lock
 crates/ely-lok/src/worker/revision.rs	expect_used	revisions().lock().expect("the revisions lock")	linux,macos,windows	the revisions lock
@@ -243,7 +247,6 @@ crates/ely-mail-engine/src/vcard.rs	expect_used	parts.last_mut().expect("starts 
 crates/ely-mail-engine/src/vcard.rs	expect_used	parts.next().expect("split yields one part")	linux,macos,windows	split yields one part
 crates/ely-office/src/chrome.rs	expect_used	id.parse().expect("tab ids are numbers")	linux,macos,windows	tab ids are numbers
 crates/ely-office/src/chrome.rs	expect_used	id.parse().expect("tab ids are numbers")	linux,macos,windows	tab ids are numbers
-crates/ely-office/src/close.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
 crates/ely-office/src/find.rs	expect_used	self.core().finder.as_ref().expect("the finder is open")	linux,macos,windows	the finder is open
 crates/ely-office/src/find.rs	expect_used	self.core_mut().finder.as_mut().expect("open")	linux,macos,windows	open
 crates/ely-office/src/find.rs	expect_used	self.core_mut().finder.as_mut().expect("the finder is open")	linux,macos,windows	the finder is open
@@ -252,7 +255,6 @@ crates/ely-office/src/find.rs	expect_used	self.core_mut().finder.as_mut().expect
 crates/ely-office/src/find.rs	expect_used	self.core_mut().finder.as_mut().expect("the finder is open")	linux,macos,windows	the finder is open
 crates/ely-office/src/find.rs	expect_used	self.core_mut().finder.as_mut().expect("the finder is open")	linux,macos,windows	the finder is open
 crates/ely-office/src/find.rs	expect_used	usize::try_from(count - finder.seen).expect("a count of outcomes")	linux,macos,windows	a count of outcomes
-crates/ely-office/src/lib.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
 crates/ely-office/src/lok.rs	expect_used	starting.lock().expect("the worker lock")	linux,macos,windows	the worker lock
 crates/ely-office/src/lok.rs	expect_used	wanted.lock().expect("the author lock")	linux,macos,windows	the author lock
 crates/ely-office/src/lok.rs	expect_used	wanted.lock().expect("the author lock")	linux,macos,windows	the author lock
@@ -260,22 +262,15 @@ crates/ely-office/src/lok.rs	expect_used	wanted.lock().expect("the author lock")
 crates/ely-office/src/lok.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
 crates/ely-office/src/open.rs	expect_used	path.parent().expect("a copy sits in its work dir")	linux,macos,windows	a copy sits in its work dir
 crates/ely-office/src/open.rs	expect_used	self.tab(id).expect("just opened")	linux,macos,windows	just opened
-crates/ely-office/src/open.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
 crates/ely-office/src/panel.rs	expect_used	ely_lok::commands::find(command) .expect("a table command")	linux,macos,windows	a table command
 crates/ely-office/src/panel.rs	expect_used	swatches .iter() .position(|(_, swatch)| *swatch == color) .expect("the palette hands back its own colors")	linux,macos,windows	the palette hands back its own colors
 crates/ely-office/src/recover.rs	expect_used	keeping.slots.get_mut(&id).expect("a due tab has a slot")	linux,macos,windows	a due tab has a slot
-crates/ely-office/src/recover.rs	expect_used	path.parent().expect("the index has a folder")	linux,macos,windows	the index has a folder
 crates/ely-office/src/recover.rs	expect_used	self.tab(id).expect("a due tab")	linux,macos,windows	a due tab
 crates/ely-office/src/recover.rs	expect_used	wrote.expect("this thread took the newest turn")	linux,macos,windows	this thread took the newest turn
+crates/ely-office/src/recover/disk.rs	expect_used	path.parent().expect("the index has a folder")	linux,macos,windows	the index has a folder
 crates/ely-office/src/recover/reopen.rs	expect_used	host.core().keeping.as_ref().expect("keeping")	linux,macos,windows	keeping
 crates/ely-office/src/recover/reopen.rs	expect_used	host.core_mut().keeping.as_mut().expect("keeping")	linux,macos,windows	keeping
-crates/ely-office/src/save.rs	expect_used	host.tab_mut(id).expect("open")	linux,macos,windows	open
-crates/ely-office/src/save.rs	expect_used	host.tab_mut(id).expect("open")	linux,macos,windows	open
-crates/ely-office/src/save.rs	expect_used	host.tab_mut(id).expect("open")	linux,macos,windows	open
-crates/ely-office/src/save.rs	expect_used	host.tab_mut(id).expect("open")	linux,macos,windows	open
-crates/ely-office/src/save.rs	expect_used	host.tab_mut(id).expect("open")	linux,macos,windows	open
 crates/ely-office/src/save.rs	expect_used	self.tab(id).expect("the tab is open")	linux,macos,windows	the tab is open
-crates/ely-office/src/save.rs	expect_used	self.tab_mut(id).expect("open")	linux,macos,windows	open
 crates/ely-office/src/save.rs	expect_used	self.tab_mut(id).expect("the tab is open")	linux,macos,windows	the tab is open
 crates/ely-office/src/stopped.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock
 crates/ely-office/src/stopped.rs	expect_used	worker.lock().expect("the worker lock")	linux,macos,windows	the worker lock

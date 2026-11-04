@@ -161,7 +161,7 @@ fn attachments_list_save_and_remove() {
     let (viewer, cx, view) = opened(&mut cx, dir.path());
     let file = dir.path().join("notes.txt");
     std::fs::write(&file, "notes").expect("writes");
-    cx.update(|_, app| view.update(app, |view, cx| view.edit("attaching", move |w, doc| w.attach(doc, "notes.txt", &file), cx)));
+    cx.update(|_, app| view.update(app, |view, cx| view.edit("pdf.doing.attach", move |w, doc| w.attach(doc, "notes.txt", &file), cx)));
     landed(cx, &view, 1);
     cx.update(|_, app| viewer.update(app, |viewer, cx| viewer.side.update(cx, |side, cx| {
         side.pane = crate::side::Pane::Files;
@@ -187,7 +187,7 @@ fn scanned(dir: &std::path::Path) -> std::path::PathBuf {
     let s: f32 = 200.0 / 72.0;
     let (w, h) = ((612.0 * s).ceil() as i32, (792.0 * s).ceil() as i32);
     let bgra = worker.render(doc, 0, (s, 0), [0, 0, w, h]).expect("draws").bgra;
-    let gray: Vec<u8> = bgra.chunks_exact(4).map(|p| ((u16::from(p[0]) + u16::from(p[1]) + u16::from(p[2])) / 3) as u8).collect();
+    let gray: Vec<u8> = bgra.as_chunks::<4>().0.iter().map(|p| ((u16::from(p[0]) + u16::from(p[1]) + u16::from(p[2])) / 3) as u8).collect();
     let path = dir.join("scan.pdf");
     std::fs::write(&path, scan((612.0, 792.0), (w as u32, h as u32), &gray)).expect("writes");
     path

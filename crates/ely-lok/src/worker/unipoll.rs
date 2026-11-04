@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use super::{answer, events, lok, password, pin, quit, teardown};
+use super::{answer, asked, closing, events, lok, pin, quit, teardown};
 use crate::ffi::Lok;
 use crate::ipc;
 
@@ -19,6 +19,7 @@ use crate::ipc;
 enum Note {
     Ask(u8, u64, Vec<u8>),
     Woken,
+    Due,
     Closed,
 }
 
@@ -32,7 +33,7 @@ static PENDING: AtomicUsize = AtomicUsize::new(0);
 pub(super) fn serve(lok: Lok, input: impl io::Read + Send + 'static) -> io::Result<()> {
     let lok = Box::leak(Box::new(lok));
     pin(lok);
-    lok.register_callback(password::on_kit);
+    lok.register_callback(asked::on_kit);
     lok.register_any_input(waiting);
     let (send, receive) = channel();
     let reading = send.clone();
@@ -93,15 +94,29 @@ extern "C" fn poll(_: *mut c_void, timeout_us: i32) -> i32 {
             1
         }
         Ok(Note::Woken) => 1,
+        Ok(Note::Due) => {
+            closing::now();
+            1
+        }
         Ok(Note::Closed) | Err(true) => teardown::teardown(0),
         Err(false) => 0,
     }
 }
 
+/// Asks the loop to close the due dialogs.
+pub(super) fn nudge() {
+    send(Note::Due, "a dialog close");
+}
+
 /// Another thread posted work for the kernel's loop.
 extern "C" fn wake(_: *mut c_void) {
+    send(Note::Woken, "a wake");
+}
+
+/// Hands the loop a note from outside its poll.
+fn send(note: Note, what: &str) {
     let notes = &NOTES.get().expect("the loop is served").0;
-    if notes.lock().expect("the notes lock").send(Note::Woken).is_err() {
-        log::info!("lok-worker: a wake after the loop ended");
+    if notes.lock().expect("the notes lock").send(note).is_err() {
+        log::info!("lok-worker: {what} after the loop ended");
     }
 }

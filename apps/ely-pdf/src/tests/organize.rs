@@ -42,7 +42,7 @@ fn a_delete_marks_the_tab_and_undo_clears_it() {
     assert!(!dirty(cx, &viewer));
     edit(cx, &view, |view, cx| {
         view.picked = [1].into();
-        view.edit("deleting", |worker, doc| worker.delete_pages(doc, &[1]), cx);
+        view.edit("pdf.doing.delete_pages", |worker, doc| worker.delete_pages(doc, &[1]), cx);
     });
     frames(cx);
     assert_eq!(cx.update(|_, app| view.read(app).sizes.len()), 2);
@@ -64,7 +64,7 @@ fn a_save_writes_the_edits_and_undo_after_it_is_unsaved_again() {
         view.move_to(to, cx);
     });
     assert_eq!(cx.update(|_, app| view.read(app).picked.iter().copied().collect::<Vec<_>>()), [0], "the moved page stays picked");
-    let id = cx.update(|_, app| viewer.read(app).core.active.expect("a tab"));
+    let id = cx.update(|_, app| viewer.read(app).core.active().expect("a tab"));
     cx.update(|window, app| viewer.update(app, |viewer, cx| viewer.save(id, None, window, cx)));
     settle(cx, |app| !viewer.read(app).active_tab().expect("a tab").dirty(app));
     assert_eq!(texts(&dir.path().join("three.pdf")), ["three", "one", "two"]);
@@ -82,8 +82,8 @@ fn an_edit_queued_behind_another_is_refused() {
     let mut cx = TestAppContext::single();
     let (_, cx, view) = three(&mut cx, dir.path());
     cx.update(|_, app| view.update(app, |view, cx| {
-        view.edit("turning", |worker, doc| worker.rotate_pages(doc, &[0], 90), cx);
-        view.edit("deleting", |worker, doc| worker.delete_pages(doc, &[0]), cx);
+        view.edit("pdf.doing.turn", |worker, doc| worker.rotate_pages(doc, &[0], 90), cx);
+        view.edit("pdf.doing.delete_pages", |worker, doc| worker.delete_pages(doc, &[0]), cx);
     }));
     // The worker sees one edit at a time.
     assert_eq!(cx.update(|_, app| (view.read(app).editing, view.read(app).queue.len())), (true, 1));
@@ -112,8 +112,8 @@ fn closing_an_edited_tab_asks_first() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let mut cx = TestAppContext::single();
     let (viewer, cx, view) = three(&mut cx, dir.path());
-    edit(cx, &view, |view, cx| view.edit("turning", |worker, doc| worker.rotate_pages(doc, &[0], 90), cx));
-    let id = cx.update(|_, app| viewer.read(app).core.active.expect("a tab"));
+    edit(cx, &view, |view, cx| view.edit("pdf.doing.turn", |worker, doc| worker.rotate_pages(doc, &[0], 90), cx));
+    let id = cx.update(|_, app| viewer.read(app).core.active().expect("a tab"));
     cx.update(|window, app| viewer.update(app, |viewer, cx| viewer.request_close(id, ely_office::After::Tab, window, cx)));
     settle(cx, |app| matches!(viewer.read(app).core.dialog, Some(Dialog::Unsaved { .. })));
 }
@@ -123,7 +123,7 @@ fn extract_and_split_write_new_files_and_refuse_to_overwrite() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let mut cx = TestAppContext::single();
     let (viewer, cx, view) = three(&mut cx, dir.path());
-    let id = cx.update(|_, app| viewer.read(app).core.active.expect("a tab"));
+    let id = cx.update(|_, app| viewer.read(app).core.active().expect("a tab"));
     let part = dir.path().join("part.pdf");
     cx.update(|_, app| viewer.update(app, |viewer, cx| viewer.write_pages(id, vec![0, 2], part.clone(), cx)));
     settle(cx, |_| part.exists());
@@ -193,7 +193,7 @@ fn a_range_pick_starts_over_after_pages_move() {
     settle(cx, |app| view.read(app).sizes.len() == 2);
     cx.update(|_, app| view.update(app, |view, cx| view.pick(0, (true, false), cx)));
     assert_eq!(cx.update(|_, app| view.read(app).chosen_pages()), [0], "no range from a page that went");
-    edit(cx, &view, |view, cx| view.edit("blank", |worker, doc| worker.insert_blank(doc, 1, (100.0, 100.0)), cx));
+    edit(cx, &view, |view, cx| view.edit("pdf.doing.insert_page", |worker, doc| worker.insert_blank(doc, 1, (100.0, 100.0)), cx));
     assert_eq!(cx.update(|_, app| view.read(app).sizes.len()), 3);
 }
 
@@ -202,9 +202,9 @@ fn a_failed_edit_lets_a_waiting_save_go() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let mut cx = TestAppContext::single();
     let (viewer, cx, view) = three(&mut cx, dir.path());
-    let id = cx.update(|_, app| viewer.read(app).core.active.expect("a tab"));
+    let id = cx.update(|_, app| viewer.read(app).core.active().expect("a tab"));
     let ran = std::rc::Rc::new(std::cell::Cell::new(false));
-    cx.update(|_, app| view.update(app, |view, cx| view.edit("cropping", |worker, doc| worker.crop_pages(doc, &[0], [900.0; 4]), cx)));
+    cx.update(|_, app| view.update(app, |view, cx| view.edit("pdf.doing.crop", |worker, doc| worker.crop_pages(doc, &[0], [900.0; 4]), cx)));
     cx.update(|_, app| viewer.update(app, |viewer, _| {
         let ran = ran.clone();
         viewer.when_settled(id, move |_, _, _| ran.set(true));
@@ -238,7 +238,8 @@ fn the_window_closes_its_tabs_off_the_window() {
     assert!(!cx.update(|window, app| viewer.update(app, |viewer, cx| viewer.should_close(window, cx))), "not at once");
     drop(view);
     // Once its tab closes, the window itself goes.
-    for _ in 0..1000 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while std::time::Instant::now() < deadline {
         cx.executor().tick();
         if cx.cx.update(|app| app.windows().is_empty()) {
             return;
@@ -276,10 +277,13 @@ fn drag(cx: &mut VisualTestContext, view: &Entity<PdfView>, path: &[gpui::Point<
     frames(cx);
 }
 
+/// Rows passed, row let go on, the order after.
+type Drag = (&'static [(usize, bool)], (usize, bool), [&'static str; 3]);
+
 #[test]
 fn a_dragged_row_lands_where_it_is_let_go() {
     // Path and release: row and half for each.
-    let cases: [(&[(usize, bool)], (usize, bool), [&str; 3]); 4] = [
+    let cases: [Drag; 4] = [
         (&[(1, true)], (1, true), ["two", "one", "three"]),
         (&[(1, false)], (1, true), ["two", "one", "three"]),
         (&[(2, true)], (2, true), ["two", "three", "one"]),
@@ -373,4 +377,94 @@ fn a_drop_in_place_picks_and_anchors_the_dragged_page() {
     click(cx, "pdf-thumb-1", Modifiers::shift());
     let picked: Vec<usize> = cx.update(|_, app| view.read(app).picked.iter().copied().collect());
     assert_eq!(picked, [1, 2], "shift reaches from the dropped page");
+}
+
+/// Forty pages, each named by its number.
+fn forty<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> (Entity<Viewer>, &'a mut VisualTestContext, Entity<PdfView>) {
+    let names: Vec<String> = (1..=40).map(|n| n.to_string()).collect();
+    let words: Vec<[&str; 1]> = names.iter().map(|n| [n.as_str()]).collect();
+    let pages: Vec<(f32, f32, &[&str])> = words.iter().map(|w| (612.0, 792.0, &w[..])).collect();
+    let (viewer, cx) = windowed(cx, dir, &[file(dir, "forty.pdf", &pages)], true);
+    let view = shown(cx, &viewer);
+    frames(cx);
+    (viewer, cx, view)
+}
+
+/// One roll tick, drawn.
+fn tick(cx: &mut VisualTestContext) {
+    cx.executor().advance_clock(std::time::Duration::from_millis(16));
+    frames(cx);
+}
+
+/// Page `n`'s text, read by the tab's worker.
+fn named(cx: &mut VisualTestContext, viewer: &Entity<Viewer>, view: &Entity<PdfView>, n: usize) -> String {
+    let (worker, doc) = cx.update(|_, app| (viewer.read(app).core.worker.clone(), view.read(app).doc));
+    let mut worker = worker.lock().expect("the lock");
+    worker.get().expect("a worker").text(doc, n).expect("reads").iter().map(|c| c.c).collect()
+}
+
+#[test]
+fn a_drop_mid_roll_lands_on_the_line() {
+    use gpui::{Modifiers, MouseButton, px};
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let (viewer, cx, view) = forty(&mut cx, dir.path());
+    let start = cx.debug_bounds("pdf-thumb-0").expect("page one").center();
+    let list = cx.debug_bounds("pdf-pages-list").expect("the list");
+    let foot = gpui::point(list.center().x, list.bottom() - px(8.0));
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(foot, MouseButton::Left, Modifiers::none());
+    // Each tick, the line is the edge nearest the hand.
+    for at in 1..=12 {
+        tick(cx);
+        let line = cx.debug_bounds("pdf-drop").expect("a line").center().y;
+        assert!((line - foot.y).abs() <= px(77.0), "tick {at}: {line:?} by {:?}", foot.y);
+    }
+    let (to, _) = cx.update(|_, app| view.read(app).aimed).expect("a line");
+    cx.simulate_mouse_up(foot, MouseButton::Left, Modifiers::none());
+    settle(cx, |app| view.read(app).settled());
+    assert_eq!(named(cx, &viewer, &view, to - 1), "1", "page one lands where the line was");
+}
+
+#[test]
+fn a_drag_held_at_the_list_foot_rolls_to_the_last_page() {
+    use gpui::{Modifiers, MouseButton, px};
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let (viewer, cx, view) = forty(&mut cx, dir.path());
+    let start = cx.debug_bounds("pdf-thumb-0").expect("page one").center();
+    let list = cx.debug_bounds("pdf-pages-list").expect("the list");
+    assert!(cx.debug_bounds("pdf-thumb-39").is_none(), "page forty starts out of view");
+    let foot = gpui::point(list.center().x, list.bottom() - px(8.0));
+    let top = |cx: &mut VisualTestContext, row: &'static str| cx.debug_bounds(row).expect("the row").top();
+    let first = top(cx, "pdf-thumb-0");
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(foot, MouseButton::Left, Modifiers::none());
+    (0..5).for_each(|_| tick(cx));
+    assert!(top(cx, "pdf-thumb-0") < first, "the foot rolls the list");
+    let line = |cx: &mut VisualTestContext| cx.debug_bounds("pdf-drop").expect("a line").center().y;
+    // Off the ends or the list, the roll stops.
+    for (away, said) in [(list.center(), "in the middle"), (gpui::point(list.center().x, list.top() - px(20.0)), "above the list")] {
+        cx.simulate_mouse_move(away, MouseButton::Left, Modifiers::none());
+        tick(cx);
+        let held = top(cx, "pdf-thumb-2");
+        (0..20).for_each(|_| tick(cx));
+        assert_eq!(top(cx, "pdf-thumb-2"), held, "no roll {said}");
+    }
+    cx.simulate_mouse_move(foot, MouseButton::Left, Modifiers::none());
+    let seen = |cx: &mut VisualTestContext| cx.debug_bounds("pdf-thumb-39").is_some_and(|row| row.bottom() <= list.bottom() + px(0.5));
+    let mut ticks = 0;
+    while !seen(cx) {
+        assert!(ticks < 2000, "the list never rolled to page forty");
+        tick(cx);
+        ticks += 1;
+    }
+    // Let go where the hand stayed, as the line says.
+    let last = cx.debug_bounds("pdf-thumb-39").expect("page forty");
+    assert!((line(cx) - last.bottom()).abs() < px(2.0), "the line under page forty");
+    cx.simulate_mouse_up(foot, MouseButton::Left, Modifiers::none());
+    settle(cx, |app| view.read(app).settled());
+    tick(cx);
+    assert!(!cx.update(|_, app| viewer.read(app).side.read(app).rolling), "the drop ends the roll");
+    assert_eq!((named(cx, &viewer, &view, 0), named(cx, &viewer, &view, 39)), ("2".into(), "1".into()), "page one went last");
 }

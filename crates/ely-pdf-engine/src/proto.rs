@@ -83,6 +83,8 @@ pub mod tag {
     pub const CHECK_PICTURES: u8 = 59;
     /// A folder's HTML page as a new PDF; no document.
     pub const HTML_PDF: u8 = 60;
+    /// Moves a text block as drawn.
+    pub const MOVE_TEXT: u8 = 61;
     pub const OK: u8 = 100;
     pub const ERR: u8 = 101;
 }
@@ -97,7 +99,9 @@ pub mod may {
     pub const ASSEMBLE: u32 = 32;
     /// Opened with the owner password, or not protected.
     pub const OWNER: u32 = 64;
-    pub const NAMES: [(u32, &str); 7] = [
+    /// Needs a PDF: an EPUB only reads.
+    pub const PDF: u32 = 128;
+    pub const NAMES: [(u32, &str); 8] = [
         (PRINT, "print"),
         (COPY, "copy"),
         (EDIT, "edit"),
@@ -105,6 +109,7 @@ pub mod may {
         (FILL, "fill"),
         (ASSEMBLE, "assemble"),
         (OWNER, "owner"),
+        (PDF, "pdf"),
     ];
     /// A refusal's error text starts with this.
     pub const REFUSED: &str = "restricted:";
@@ -165,7 +170,9 @@ pub fn chars(bytes: &[u8]) -> io::Result<Vec<Char>> {
     let word =
         |at: &[u8], n: usize| <[u8; 4]>::try_from(&at[n * 4..n * 4 + 4]).expect("four bytes");
     bytes
-        .chunks_exact(CHAR_BYTES)
+        .as_chunks::<CHAR_BYTES>()
+        .0
+        .iter()
         .map(|one| {
             let code = u32::from_ne_bytes(word(one, 1));
             Ok(Char {
@@ -240,6 +247,8 @@ pub fn outline(json: &str) -> io::Result<Vec<Bookmark>> {
 pub const ANY: u64 = u64::MAX;
 /// How a refusal for a changed document begins.
 pub const STALE: &str = "stale: ";
+/// Catalog keys the worker words its errors by.
+pub const WORDED: &[&str] = &["pdf.error.not_pdf", "pdf.error.password_changed", "pdf.error.repaired_password", "pdf.error.not_whole"];
 
 #[cfg(test)]
 mod tests {

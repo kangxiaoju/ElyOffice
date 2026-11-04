@@ -5,7 +5,7 @@ members = ["apps/*", "crates/*"]
 exclude = ["engines", "reference"]
 
 [workspace.package]
-version = "0.1.12"
+version = "0.1.13"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -20,7 +20,7 @@ jiff = "0.2"
 anyhow = "1"
 directories = "6"
 dunce = "1"
-ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components", rev = "39f1cd234aabdd2058e52549ae99457f42f86d61" }
+ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components", rev = "89bff04957fde8bec63529bea0efe90f2a183159" }
 env_logger = "0.11"
 gpui = { package = "gpui-pre", version = "=0.3.10", default-features = false, features = ["stacker"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.10", features = ["font-kit", "wayland", "x11"] }
@@ -46,15 +46,17 @@ html5ever = "0.39"
 sha2 = "0.10"
 ring = "0.17"
 tempfile = "3"
+unicase = "2.10"
 ureq = { version = "3", features = ["socks-proxy"] }
 unicode-segmentation = "1"
-windows-sys = { version = "0.60", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Globalization", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Threading", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Com", "Win32_UI_Shell", "Win32_System_Registry", "Win32_Security_Authentication_Identity", "Win32_Security_Cryptography", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp"] }
+unicode-normalization = "0.1"
+windows-sys = { version = "0.60", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Globalization", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Threading", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Com", "Win32_UI_Shell", "Win32_System_Registry", "Win32_Security_Authentication_Identity", "Win32_Security_Cryptography", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_UI_HiDpi"] }
 windows = { version = "0.62", features = ["Data_Pdf", "Graphics_Imaging", "Storage_Streams", "Win32_Foundation", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi", "Win32_Graphics_Imaging", "Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_Graphics_Printing", "Win32_Storage_Xps", "Win32_System_Memory", "Win32_System_WinRT", "Win32_UI_Controls_Dialogs", "Win32_UI_Input_KeyboardAndMouse"] }
 windows-core = "0.62"
 lopdf = { version = "0.45", default-features = false }
 zbus = { version = "5", default-features = false, features = ["async-io"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSLocale", "NSPathUtilities", "NSString", "NSURL", "NSDictionary", "NSValue", "NSError", "NSRunLoop", "NSDate", "NSUserDefaults"] }
-objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVPlayer", "AVPlayerItem", "AVPlayerItemOutput", "AVAsset", "objc2-core-media", "objc2-core-video", "objc2-core-foundation"] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVPlayer", "AVPlayerItem", "AVPlayerItemOutput", "AVAsset", "AVAssetTrack", "AVMediaFormat", "objc2-core-media", "objc2-core-video", "objc2-core-foundation"] }
 objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMTime"] }
 objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBuffer", "CVImageBuffer", "CVPixelBuffer"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFString", "CFCGTypes"] }
@@ -90,6 +92,11 @@ ely-ui = { path = "crates/ely-ui" }
 all = { level = "warn", priority = -1 }
 
 [patch.crates-io]
+accesskit_atspi_common = { path = "vendor/accesskit_atspi_common" }
+accesskit_unix = { path = "vendor/accesskit_unix" }
 gpui-pre = { path = "vendor/gpui-pre" }
+gpui-pre-linux = { path = "vendor/gpui-pre-linux" }
+gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
 gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
 mail-parser = { path = "vendor/mail-parser" }
+zbus = { path = "vendor/zbus" }

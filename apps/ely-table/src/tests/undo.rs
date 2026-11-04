@@ -13,22 +13,22 @@ impl gpui::Render for Shown {
 }
 
 /// A drawn Book, its actions live.
-fn drawn<'a>(cx: &'a mut TestAppContext, dir: &Path) -> Option<(Entity<Book>, &'a mut VisualTestContext)> {
-    let install = ely_lok::install_dir().ok()?;
-    let worker = ely_office::lok::test_worker(&install, &dir.join("profile"));
+pub(super) fn drawn<'a>(cx: &'a mut TestAppContext, dir: &Path) -> Option<(Entity<Book>, &'a mut VisualTestContext)> {
+    let install = ely_lok::test_install()?;
+    let (worker, stop) = ely_office::lok::test_worker(&install, &dir.join("profile"));
     let work = dir.join("work");
     std::fs::create_dir_all(&work).expect("the work dir");
     cx.update(|cx| {
         ely_gpui_component::init_for_tests(cx);
         ely_ui::settings::install_defaults(cx);
-        ely_ui::i18n::install(cx);
+        ely_ui::i18n::install_as("en-US", cx);
         let edit = gpui::Menu::new("Edit").items(ely_office::undo_items((false, false), cx));
         let menus = ely_ui::commands::menus(ely_platform::AppId::Table, &ely_ui::commands::FILE, true, vec![edit], cx);
         cx.set_menus(menus);
         ely_office::bind_undo_keys(cx);
     });
     let (shown, cx) = cx.add_window_view(|window, cx| {
-        let book = cx.new(|cx| Book::new(worker, work, window, cx));
+        let book = cx.new(|cx| Book::new(worker, stop, work, window, cx));
         book.update(cx, |book, _| book.core.window = Some(window.window_handle()));
         Shown(book)
     });

@@ -43,7 +43,8 @@ fn pack_events(batch: Events) -> Vec<u8> {
     let pack = pack
         .u64(batch.review)
         .u64(batch.searched)
-        .u64(batch.resized);
+        .u64(batch.resized)
+        .u64(batch.dismissed);
     let pack = rects(pack, &batch.found);
     let pack = pack.str(batch.menu.as_deref().unwrap_or_default());
     let pack = batch
@@ -65,9 +66,13 @@ fn pack_events(batch: Events) -> Vec<u8> {
     let pack = batch
         .blocked
         .iter()
-        .fold(pack.u64(batch.blocked.len() as u64), |pack, title| {
-            pack.str(title)
+        .fold(pack.u64(batch.blocked.len() as u64), |pack, (title, body)| {
+            pack.str(title).str(body)
         });
+    let pack = batch
+        .links
+        .iter()
+        .fold(pack.u64(batch.links.len() as u64), |pack, link| pack.str(link));
     let pack = batch
         .tabs
         .iter()

@@ -1,7 +1,7 @@
 //! Keys, mouse, IME and clipboard for LokView (LOK-06, LOK-07).
 
 use ely_gpui_component::secondary;
-use std::{io, sync::Mutex, time::Instant};
+use std::{io, time::Instant};
 
 use ely_platform::clipboard;
 use gpui::{
@@ -9,7 +9,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, Pixels, Window, actions,
 };
 
-use super::{LokView, clip, handles};
+use super::{LokView, clip, clock::Picture, handles};
 use crate::{Doc, Mouse, Rect, Worker};
 
 actions!(lok_view, [Copy, Cut, Paste, NextField, PreviousField]);
@@ -39,10 +39,8 @@ pub(super) enum Input {
         key_code: i32,
     },
     Mouse(Mouse),
-    Text {
-        commit: bool,
-        text: String,
-    },
+    /// The composition becomes `text`; `ends` commits it.
+    Text { text: String, ends: bool },
     Copy {
         cut: bool,
     },
@@ -176,6 +174,8 @@ pub(super) fn vcl_key(keystroke: &Keystroke) -> Option<(u32, i32)> {
         "space" if command => Some(1284),
         "insert" => Some(1285),
         "delete" => Some(1286),
+        // Kernel help is LibreOffice's manual.
+        "f1" => return None,
         key => key
             .strip_prefix('f')
             .and_then(|n| n.parse::<i32>().ok())
@@ -207,17 +207,16 @@ fn lok_button(button: MouseButton) -> Option<i32> {
     }
 }
 
-/// Runs one input; gives a copy's mark and the revision.
-pub(super) fn run(worker: &Mutex<Worker>, doc: &Doc, input: Input) -> (io::Result<Option<Back>>, Option<u64>) {
-    let mut worker = worker.lock().expect("the worker lock");
-    let counts = !matches!(input, Input::Visible(..));
-    let copied = apply(&mut worker, doc, input);
+/// Runs one input; gives its outcome, revision and picture.
+pub(super) fn run(worker: &mut Worker, doc: &Doc, input: Input) -> (io::Result<Option<Back>>, Option<u64>, Picture) {
+    let (counts, edits) = (!matches!(input, Input::Visible(..)), input.edits());
+    let state = |worker: &mut Worker| worker.state(doc).inspect_err(|error| log::warn!("lok: state unread: {error}")).ok();
+    let before = edits.then(|| state(worker)).flatten();
+    let done = apply(worker, doc, input);
     // A failed input may have moved the revision too.
-    let now = match counts {
-        true => worker.now(doc).inspect_err(|error| log::warn!("lok: revision unread: {error}")).ok().map(|now| now.rev),
-        false => None,
-    };
-    (copied, now)
+    let now = counts.then(|| state(worker)).flatten();
+    let picture = super::clock::picture(before, now, done.is_err());
+    (done, now.map(|(rev, ..)| rev), picture)
 }
 
 fn apply(worker: &mut Worker, doc: &Doc, input: Input) -> io::Result<Option<Back>> {
@@ -236,7 +235,9 @@ fn apply(worker: &mut Worker, doc: &Doc, input: Input) -> io::Result<Option<Back
             return Ok(Some(Back::Completed(taken)));
         }
         Input::Theme(scheme) => worker.run(doc, "view.theme", &[scheme]),
-        Input::Text { commit, text } => worker.post_text(doc, commit, &text),
+        Input::Text { text, ends } => {
+            worker.post_text(doc, false, &text).and_then(|()| if ends { worker.post_text(doc, true, "") } else { Ok(()) })
+        }
         Input::Copy { cut } => {
             let copied = clip::copy_out(worker, doc, cut, |clip| clipboard::write(clip).map_err(io::Error::other));
             return copied.map(|copied| copied.map(Back::Copied));
@@ -264,7 +265,7 @@ impl LokView {
         self.sent += 1;
         if input.edits() {
             self.last_edit = self.sent;
-            self.clock.sent();
+            self.clock.sent(self.sent, input.kind());
         }
         self.lane
             .inputs

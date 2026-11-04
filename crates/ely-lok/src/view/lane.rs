@@ -9,6 +9,7 @@ use std::{
 use futures::{StreamExt, channel::mpsc, select_biased};
 use gpui::Context;
 
+use super::clock::Picture;
 use super::input::{Back, Input};
 use super::{Geom, LokError, LokView, Reported, TILE_TWIPS};
 use crate::{Doc, Tile, Worker};
@@ -25,8 +26,10 @@ pub(super) struct Job {
 /// What came back from the lane.
 enum Landed {
     /// Sequence, whether it edits, whether it switched part, outcome.
-    Input(u64, bool, bool, (io::Result<Option<Back>>, Option<u64>)),
+    Input(u64, bool, bool, (io::Result<Option<Back>>, Option<u64>, Picture)),
     Tile(Job, io::Result<Tile>),
+    /// Off screen or old by the time its turn came.
+    Skipped((i32, i32)),
 }
 
 /// The lane's two queues.
@@ -37,44 +40,64 @@ pub(super) struct Lane {
 
 impl LokView {
     /// Starts the lane; it ends with the view.
-    pub(super) fn lane(worker: Arc<Mutex<Worker>>, doc: Doc, cx: &mut Context<Self>) -> Lane {
+    pub(super) fn lane(worker: Arc<Mutex<Worker>>, doc: Doc, wanted: super::reveal::Wanted, cx: &mut Context<Self>) -> Lane {
         let (inputs, mut input_queue) = mpsc::unbounded::<(u64, Input, Instant)>();
         let (tiles, mut tile_queue) = mpsc::unbounded::<Job>();
         let (landing, mut landed) = mpsc::unbounded::<Landed>();
         cx.background_executor()
             .spawn(async move {
-                loop {
+                'lane: loop {
                     let done = select_biased! {
                         input = input_queue.next() => {
-                            let Some((seq, input, sent)) = input else { break };
-                            let (waited, edits, kind) = (sent.elapsed().as_millis(), input.edits(), input.kind());
-                            let switched = matches!(input, super::input::Input::Part(_));
-                            let outcome = super::input::run(&worker, &doc, input);
-                            let took = sent.elapsed().as_millis();
-                            if took > SLOW_MS {
-                                log::warn!("lok: input {seq} {kind} waited {waited}, took {took} ms");
-                            } else {
-                                log::debug!("lok: input {seq} {kind} waited {waited}, took {took} ms");
+                            let Some(first) = input else { break };
+                            let mut batch = vec![first];
+                            // Queued inputs share one hold of the worker.
+                            while let Ok(more) = input_queue.try_recv() {
+                                batch.push(more);
                             }
-                            Landed::Input(seq, edits, switched, outcome)
+                            let mut held = worker.lock().expect("the worker lock");
+                            let mut done = Vec::with_capacity(batch.len());
+                            for (seq, input, sent) in batch {
+                                let (waited, edits, kind) = (sent.elapsed().as_millis(), input.edits(), input.kind());
+                                let switched = matches!(input, super::input::Input::Part(_));
+                                let outcome = super::input::run(&mut held, &doc, input);
+                                let took = sent.elapsed().as_millis();
+                                if took > SLOW_MS {
+                                    log::warn!("lok: input {seq} {kind} waited {waited}, took {took} ms");
+                                } else {
+                                    log::debug!("lok: input {seq} {kind} waited {waited}, took {took} ms");
+                                }
+                                done.push(Landed::Input(seq, edits, switched, outcome));
+                            }
+                            done
                         }
                         job = tile_queue.next() => {
                             let Some(job) = job else { break };
-                            let started = Instant::now();
-                            let side = job.geom.tile_pixels();
-                            let (x, y) = (job.key.0 * TILE_TWIPS, job.key.1 * TILE_TWIPS);
-                            let tile = doc.paint_tile(
-                                &mut worker.lock().expect("the worker lock"),
-                                (x, y, TILE_TWIPS, TILE_TWIPS),
-                                (side, side),
-                            );
-                            let key = job.key;
-                            log::debug!("lok: tile {key:?} in {} ms", started.elapsed().as_millis());
-                            Landed::Tile(job, tile)
+                            let still = {
+                                let wanted = super::reveal::wanted(&wanted);
+                                wanted.0 == job.geom && wanted.1.contains(&job.key)
+                            };
+                            vec![if !still {
+                                log::debug!("lok: tile job {:?} skipped", job.key);
+                                Landed::Skipped(job.key)
+                            } else {
+                                let started = Instant::now();
+                                let side = job.geom.tile_pixels();
+                                let (x, y) = (job.key.0 * TILE_TWIPS, job.key.1 * TILE_TWIPS);
+                                let mut held = worker.lock().expect("the worker lock");
+                                let waited = started.elapsed().as_millis();
+                                let tile = doc.paint_tile(&mut held, (x, y, TILE_TWIPS, TILE_TWIPS), (side, side));
+                                drop(held);
+                                let key = job.key;
+                                log::debug!("lok: tile {key:?} in {} ms, {waited} waiting for the worker", started.elapsed().as_millis());
+                                Landed::Tile(job, tile)
+                            }]
                         }
                     };
-                    if landing.unbounded_send(done).is_err() {
-                        break;
+                    for done in done {
+                        if landing.unbounded_send(done).is_err() {
+                            break 'lane;
+                        }
                     }
                 }
             })
@@ -106,12 +129,12 @@ impl LokView {
                         self.invalidate(cx);
                     }
                     self.edited += u64::from(edits);
-                    let (outcome, now) = outcome;
+                    let (outcome, now, picture) = outcome;
                     // A plain key took nothing; the menu may return.
                     let taken = matches!(outcome, Ok(Some(Back::Completed(true))));
                     self.completion.landed(seq, if taken { now } else { None });
                     if edits {
-                        self.clock.landed(now);
+                        self.clock.landed(seq, picture);
                     }
                     self.seen_revision(now.unwrap_or(0));
                     match outcome {
@@ -132,6 +155,9 @@ impl LokView {
                     reported = true;
                 }
                 Landed::Tile(job, tile) => self.finish_tile(job.key, job.geom, tile, cx),
+                Landed::Skipped(key) => {
+                    self.fetching.remove(&key);
+                }
             }
         }
         if reported {

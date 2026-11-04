@@ -9,6 +9,7 @@ use ely_gpui_component::{
 };
 use ely_office::{Closing as _, Tabs as _};
 use ely_pdf_engine::{Writing, Wrote};
+use ely_ipc::Worded;
 use gpui::{
     AnyElement, App, Context, IntoElement, KeyBinding, MenuItem, ParentElement as _, Styled as _, Window, actions,
     div, img, px,
@@ -18,13 +19,17 @@ use crate::content::{Aim, Tool};
 use crate::editing::Preview;
 use crate::viewer::Viewer;
 
-actions!(pdf, [EditContent, AddText, AddImage, StopEditing]);
+actions!(pdf, [EditContent, AddText, AddImage, StopEditing, DeleteObject]);
 
 /// The key context while an editing tool is on.
 pub const EDITING: &str = "PdfEditing";
 
 pub fn bind(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("escape", StopEditing, Some(EDITING))]);
+    cx.bind_keys([
+        KeyBinding::new("escape", StopEditing, Some(EDITING)),
+        KeyBinding::new("delete", DeleteObject, Some(EDITING)),
+        KeyBinding::new("backspace", DeleteObject, Some(EDITING)),
+    ]);
 }
 
 /// The editing items of the Edit menu.
@@ -40,6 +45,16 @@ pub fn items(cx: &App) -> [MenuItem; 3] {
 /// Pixels a point in a preview.
 const PREVIEW: f32 = 2.0;
 
+/// The chosen font cannot draw `c`.
+pub(crate) fn no_glyph(c: char) -> io::Error {
+    Worded::error(io::ErrorKind::InvalidInput, "pdf.text.missing", &[("char", &c.to_string())])
+}
+
+/// The document's own font cannot write new text.
+pub(crate) fn unwritable() -> io::Error {
+    Worded::error(io::ErrorKind::InvalidInput, "pdf.text.unwritable", &[])
+}
+
 impl Viewer {
     /// Turns `tool` on, or off when it is on.
     pub(crate) fn toggle_tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
@@ -54,7 +69,7 @@ impl Viewer {
 
     /// Writes the panel's text, or empties the block when `erase`.
     pub fn write_text(&mut self, erase: bool, cx: &mut Context<Self>) {
-        let (Some(tab), Some(view)) = (self.core.active, self.active_view()) else {
+        let (Some(tab), Some(view)) = (self.core.active(), self.active_view()) else {
             return;
         };
         let Some(aim) = view.read(cx).aim else {
@@ -125,7 +140,7 @@ impl Viewer {
                 cx.notify();
             }
             Ok(_) => self.commit_text((tab, version, page), writing, cx),
-            Err(error) => self.failed_read("previewing text", &error, cx),
+            Err(error) => self.failed_read("pdf.doing.preview", &error, cx),
         }
     }
 
@@ -137,11 +152,11 @@ impl Viewer {
         };
         self.on_same(&view, version, cx, |view, cx| {
             view.edit(
-                "writing text",
+                "pdf.doing.write",
                 move |worker, doc| match worker.put_text(doc, page, &writing, 0.0)? {
                     Wrote::Done(mark) => Ok(mark),
-                    Wrote::Missing(c) => Err(io::Error::other(format!("the font has no {c}"))),
-                    Wrote::Unwritable => Err(io::Error::other("the document's font cannot write")),
+                    Wrote::Missing(c) => Err(no_glyph(c)),
+                    Wrote::Unwritable => Err(unwritable()),
                     Wrote::Preview(..) => Err(io::Error::other("a write came back as a preview")),
                 },
                 cx,
@@ -151,8 +166,8 @@ impl Viewer {
 
     fn failed_read(&self, what: &str, error: &io::Error, cx: &mut App) {
         log::error!("pdf: {what} failed ({:?})", error.kind());
-        let text = Self::text(cx, "pdf.failed", &[("what", what), ("error", &error.to_string())]);
-        self.toast(text, Severity::Danger, cx);
+        let text = Self::text(cx, "pdf.failed", &[("what", &Self::text(cx, what, &[])), ("error", &ely_ui::i18n::error(cx, error))]);
+        self.toast_unlogged(text, Severity::Danger, cx);
     }
 
     /// The aimed object: its page and index.
@@ -169,7 +184,7 @@ impl Viewer {
         };
         let version = view.read(cx).version;
         self.on_same(&view, version, cx, |view, cx| {
-            view.edit("deleting an object", move |worker, doc| worker.delete_object(doc, page, index), cx)
+            view.edit("pdf.doing.delete_object", move |worker, doc| worker.delete_object(doc, page, index), cx)
         });
     }
 
@@ -181,7 +196,7 @@ impl Viewer {
         let version = view.read(cx).version;
         self.pick(false, cx, move |viewer, path: PathBuf, cx| {
             viewer.on_same(&view, version, cx, |view, cx| {
-                view.edit("replacing an image", move |worker, doc| worker.replace_image(doc, page, index, &path), cx)
+                view.edit("pdf.doing.replace_image", move |worker, doc| worker.replace_image(doc, page, index, &path), cx)
             });
         });
     }
@@ -214,7 +229,7 @@ impl Viewer {
         self.pick(false, cx, move |viewer, path: PathBuf, cx| {
             let (w, h) = match image::image_dimensions(&path) {
                 Ok(size) => size,
-                Err(error) => return viewer.failed_read("reading the picture", &io::Error::other(error), cx),
+                Err(error) => return viewer.failed_read("pdf.doing.picture", &io::Error::other(error), cx),
             };
             viewer.on_same(&view, version, cx, |view, cx| {
                 let (pw, ph) = view.sizes[page];
@@ -222,7 +237,7 @@ impl Viewer {
                 let fit = (pw * 0.5 / w as f32).min(ph * 0.5 / h as f32).min(0.75);
                 let (iw, ih) = (w as f32 * fit, h as f32 * fit);
                 let rect = [(pw - iw) / 2.0, (ph - ih) / 2.0, (pw + iw) / 2.0, (ph + ih) / 2.0];
-                view.edit("adding an image", move |worker, doc| worker.add_image(doc, page, &path, rect), cx)
+                view.edit("pdf.doing.add_image", move |worker, doc| worker.add_image(doc, page, &path, rect), cx)
             });
         });
     }
@@ -268,6 +283,7 @@ pub fn on(root: gpui::Div, cx: &mut Context<Viewer>) -> gpui::Div {
         .on_action(cx.listener(|v, _: &AddText, _, cx| v.toggle_tool(Tool::AddText, cx)))
         .on_action(cx.listener(|v, _: &AddImage, _, cx| v.add_image(cx)))
         .on_action(cx.listener(|v, _: &StopEditing, _, cx| v.on_view(|view, cx| view.set_tool(Tool::Read, cx), cx)))
+        .on_action(cx.listener(|v, _: &DeleteObject, _, cx| v.delete_object(cx)))
 }
 
 impl Viewer {

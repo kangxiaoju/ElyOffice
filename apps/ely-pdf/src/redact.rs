@@ -71,7 +71,7 @@ pub(crate) fn beside(name: &str, tail: &str) -> String {
 
 impl Viewer {
     pub fn ask_redact(&mut self, cx: &mut Context<Self>) {
-        let (Some(tab), Some(view)) = (self.core.active, self.active_view()) else {
+        let (Some(tab), Some(view)) = (self.core.active(), self.active_view()) else {
             return self.no_document(cx);
         };
         let read = view.read(cx);
@@ -124,7 +124,7 @@ impl Viewer {
             return;
         };
         let Some(dir) = ely_office::folder(open) else {
-            return self.panel_failed("no documents folder", cx);
+            return self.panel_failed(&ely_ui::i18n::text(cx, "error.no_documents", &[]), cx);
         };
         let tail = match removal {
             Removal::Redact { .. } => Self::text(cx, "pdf.redact.tail", &[]),

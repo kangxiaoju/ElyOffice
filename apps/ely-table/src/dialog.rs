@@ -27,6 +27,7 @@ pub(crate) fn edit(
 
 /// What the open dialog asks, for which workbook.
 pub enum Dialog {
+    RMacro(Box<crate::macros::Editor>),
     Rename {
         tab: u64,
         /// The state the sheet number was read in.
@@ -98,6 +99,8 @@ pub enum Dialog {
         row: u32,
         entries: Vec<Entry>,
         picked: Vec<SharedString>,
+        /// Narrows the entries shown; hidden ones keep their tick.
+        search: Entity<TextInput>,
     },
     Validation {
         tab: u64,
@@ -176,6 +179,7 @@ impl Dialog {
             | Dialog::Export { tab, .. }
             | Dialog::Page { tab, .. }
             | Dialog::Protect { tab, .. } => Some(*tab),
+            Dialog::RMacro(editor) => Some(editor.tab),
             Dialog::Import(_) => None,
         }
     }
@@ -203,6 +207,7 @@ impl Book {
             }
         };
         let element = match self.dialog.as_ref()? {
+            Dialog::RMacro(editor) => crate::macros::dialog(this, editor, dismiss, cx).into_any_element(),
             Dialog::Rename { tab, index, field, .. } => {
                 let names = self.sheet_in(*tab)?.2;
                 crate::sheets::dialogs::rename(this, (*index, field, names), dismiss, cx)
@@ -259,8 +264,9 @@ impl Book {
                 column,
                 entries,
                 picked,
+                search,
                 ..
-            } => data::column_dialog(this, (*column, entries, picked), dismiss, cx)
+            } => data::column_dialog(this, (*column, entries, picked, search), dismiss, cx)
                 .into_any_element(),
             Dialog::Validation { rule, fields, .. } => {
                 rules::validation_dialog(this, (rule, fields), dismiss, cx).into_any_element()

@@ -36,6 +36,7 @@ const en = {
   likeEnd: " on GitHub.",
   count: "{n} downloads so far.",
   source: "Source",
+  upstream: "Upstream source",
   other: "中文",
   roads: "Drag a file down the road.",
   fileDoc: "ElyDoc file",
@@ -54,6 +55,8 @@ const en = {
   light: "Switch to light",
   clipPlay: "Play",
   clipPause: "Pause",
+  docs: "Command line",
+  changelog: "Changelog",
   privacy: "Privacy",
   terms: "Terms",
 };
@@ -93,6 +96,7 @@ const zh: typeof en = {
   likeEnd: "。",
   count: "已下载 {n} 次。",
   source: "源码",
+  upstream: "上游源码",
   other: "English",
   roads: "把文件沿着路拖过去。",
   fileDoc: "ElyDoc 文件",
@@ -111,6 +115,8 @@ const zh: typeof en = {
   light: "切换到浅色",
   clipPlay: "播放",
   clipPause: "暂停",
+  docs: "命令行",
+  changelog: "更新日志",
   privacy: "隐私政策",
   terms: "服务条款",
 };

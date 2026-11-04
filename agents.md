@@ -27,20 +27,20 @@ crates/      ely-ui  ely-platform  ely-ipc（应用与引擎 worker 之间的帧
 reference/   上游源码，只读，不属于本项目，不审查
 engines/     下载的二进制与引擎构建产物，不入库，不审查；mupdf-src 是 reference/mupdf 加 patches/mupdf 的构建副本
 patches/     对上游的补丁，随源码发行（libreoffice、mupdf）
-vendor/      crates.io 上游 crate 的副本加本项目的修复，经工作区 `[patch.crates-io]` 换入（gpui-pre、gpui-pre-windows、mail-parser）；首个提交为原样，其后是修复
+vendor/      crates.io 上游 crate 的副本加本项目的修复，经工作区 `[patch.crates-io]` 换入（accesskit_atspi_common、accesskit_unix、gpui-pre、gpui-pre-linux、gpui-pre-macos、gpui-pre-windows、mail-parser、zbus）；首个提交为原样，其后是修复
 packaging/   三端打包脚本，apps.tsv 是八个应用的二进制名、名字、桌面分类、发布批次与许可（Linux 包与 Nix 的许可字段）；icons/ 由图标母版渲染各端格式；libreoffice/ely.xcd 是内核的默认配置层
 assets/      icons/ 是八个应用的图标母版（SVG）与渲染出的 icns、png、ico，规则见其 README
 dist/        打包产物，不入库
-docs/        兼容清单、无障碍、帮助、许可、性能记录；engineering-risks.md、qa.md 等内部笔记只在本机，不入库
-scripts/     fetch-references.sh 取上游  doctor.sh 查工具  review.sh 开分栏审查  build-*.sh 构建引擎
-tests/       scripts 与 engines 下是脚本测试；engines 缺二进制时报 SKIP；fixtures 是测试共用的样本（media/clip.mp4：1 秒 H.264/AAC；pdf/aes128.pdf：AES-128 加密，打开密码 user、所有者密码 owner；pdf/signer.p12 与 signer.der：自签名测试证书，密码 ely；pdf/chain-root.der 与 chain-leaf.der：测试用的根与其签发的证书；show/sections.pptx：t.pptx 加两个章节（p14:sectionLst），sections-utf16.pptx 同而 presentation.xml 为 UTF-16LE，sections-locked.pptx 为其加密版，打开密码 ely，sections-locked-tail.pptx 同而目录移到文件末尾、`EncryptedPackage` 在最后一格；tree/launcher-fails、launcher-held、launcher-pwd、launcher-session：ElyTree 终端启动器测试用的可执行脚本（Git 里 100755）；git/git-2.39、git-2.40：只报版本的假 Git（版本下限测试，Git 里 100755）；table/kept.xlsx：照 Excel 写法的 XLSX，含 Calc 不认的函数（`CUBEVALUE`、`_xlfn.TRANSLATE`，一组共享公式）与其缓存值，kept-more.xlsx 含布尔、空串、缺值、坏数、数组（含各类成员）与易变函数，kept-more.ods 含属性顺序不同的空串、空串与坏数的矩阵成员，kept-strings.xlsx 含内联与共享字符串的数组成员、坏索引与用未知函数的定义名称，皆由同目录 make-kept.py 生成；mail/sample.eml：带编码主题、分组抄送、纯文本加 HTML、cid 图片与附件的邮件，LF 行尾，测试换成 CRLF）
+docs/        兼容清单、无障碍、帮助、许可、性能记录、功能编号与测试的对照（test-map.md，由 scripts/test-map.py 生成）；验收的证据都在库里
+scripts/     fetch-references.sh 取上游  doctor.sh 查工具  review.sh 开终端审查  build-*.sh 构建引擎
+tests/       scripts 与 engines 下是脚本测试；engines 缺二进制时报 SKIP；fixtures 是测试共用的样本（media/clip.mp4：1 秒 H.264/AAC；pdf/aes128.pdf：AES-128 加密，打开密码 user、所有者密码 owner；pdf/signer.p12 与 signer.der：自签名测试证书，密码 ely；pdf/chain-root.der 与 chain-leaf.der：测试用的根与其签发的证书；show/sections.pptx：t.pptx 加两个章节（p14:sectionLst），sections-utf16.pptx 同而 presentation.xml 为 UTF-16LE，sections-locked.pptx 为其加密版，打开密码 ely，sections-locked-tail.pptx 同而目录移到文件末尾、`EncryptedPackage` 在最后一格；tree/launcher-fails、launcher-held、launcher-pwd、launcher-session：ElyTree 终端启动器测试用的可执行脚本（Git 里 100755）；git/git-2.39、git-2.40：只报版本的假 Git（版本下限测试），git-fails：报出版本后以 7 失败的假 Git；pdf/stale-worker、crossed-worker：答错盖章与错号的假 PDF worker（皆 Git 里 100755：测试里现写现跑的程序会撞上别的测试 fork 出的子进程而报 ETXTBSY）；table/kept.xlsx：照 Excel 写法的 XLSX，含 Calc 不认的函数（`CUBEVALUE`、`_xlfn.TRANSLATE`，一组共享公式）与其缓存值，kept-more.xlsx 含布尔、空串、缺值、坏数、数组（含各类成员）与易变函数，kept-more.ods 含属性顺序不同的空串、空串与坏数的矩阵成员，kept-strings.xlsx 含内联与共享字符串的数组成员、坏索引与用未知函数的定义名称，spill.xlsx 含 Excel 的动态数组（`cm` 指向 `xl/metadata.xml` 的 XLDAPR，其一此刻只占一格）、普通数组与块非动态的数组，spill-broken.xlsx 同而 metadata.xml 读不出，spill-empty.xlsx 同而 metadata.xml 为零字节，booleans.xlsx 含公式里裸的 `TRUE`、`FALSE`，皆由同目录 make-kept.py 生成；r-macro-demo.fods：R 宏的样本（首尾带空格的文字、前导零的文字、数字、逻辑值、空格与公式），rscript-fails、rscript-held、rscript-invalid：以 7 失败、一直不退、写出越界指令的假 Rscript（Git 里 100755，理由同 git-fails）；pivot.xlsx：照 Excel 写法的紧凑透视表，无标题属性（Excel 显示 Row Labels、Column Labels、Grand Total），pivot-named.xlsx 同而三个标题属性为中文，pivot-blank.xlsx 行、列标题为空串，pivot-columns.xlsx 只有列字段、标题为中文，pivot-values.xlsx 同而两个值字段按行排（行区只有数据布局字段），pivot-values-named.xlsx 同而 `dataCaption` 为中文（数值），pivot-empty.xlsx 只有列字段而无值字段、旁边 H4 有用户的值，pivot-name-formula.xlsx、pivot-name-quote.xlsx、pivot-name-number.xlsx 同 pivot-columns.xlsx 而值字段名为 `=1+1`、`'Revenue`、`123`（照 Excel 存的文件），皆由同目录 make-pivot.py 生成；links.xlsx：两张表的超链接，一个 `location` 自带 `#`（第三方导出工具的写法）、一个不带、一个外部网址，由同目录 make-links.py 生成；office/backslash.docx、backslash.xlsx：腾讯文档式的反斜杠目录条目，broken.docx：名字含问号的坏包，malformed.docx：正文 XML 截断一半（内核在导入中问是否修复），equation.docx：公式里数学连字符（Word 显示为减号）与一段普通文字的连字符，toc.docx：内容控件里有标题的目录、域结束独占末段，toc-tail.docx 与 toc-tail-untitled.docx：有、无标题的目录，域结束后同段还有正文，toc-tail-entry.docx 与 toc-tail-entry-untitled.docx 同而域结束在末条目录里、其后同段是正文，toc-shape.docx 与 toc-shape-untitled.docx 同而其后同段只有浮动文本框，toc-inline.docx：目录条目在行内内容控件里，redline.docx：书签、指向它的 PAGEREF 与一处插入一处删除（打开后不得算已修改），皆由同目录 make-packages.py 生成；show/video.pptx：1 秒的 clip.mp4、其淡入与点击即播放暂停的触发序列（PowerPoint 的写法），由同目录 make-media.py 生成；epub/sample.epub：两章、目录、中文与一张缺失的图片（MuPDF 排版时警告），由同目录 make-sample.py 生成；mail/sample.eml：带编码主题、分组抄送、纯文本加 HTML、cid 图片与附件的邮件，LF 行尾，测试换成 CRLF）
 tasks/       TASKS.md 进度真相
-site/        官网（Vite 8、pnpm、TypeScript，无框架；等轴 SVG 积木；中英两种文案在 src/text.ts）；site/video 是发布视频的分镜、配乐、录屏与合成脚本，产物在 site/video/out（不入库）
+site/        官网（Vite 8、pnpm、TypeScript，无框架；`/docs` 命令行页、`/changelog` 更新日志由 `changelog/<版本>.md` 每版一个在构建时写成，两页随网站语言只显示一种（`public/lang.js`，首页链接带 `?lang=`）；等轴 SVG 积木；中英两种文案在 src/text.ts）；site/video 是发布视频的分镜、配乐、录屏与合成脚本，产物在 site/video/out（不入库）
 ```
 
 ## 组件映射
 
-依赖 `ely-gpui-component`（pin 39f1cd2，gpui 为 crates.io 的 `gpui-pre` =0.3.10，Rust 1.98.1）。名字取自 `reference/Ely-GPUI-Components`：总包 `src/lib.rs` 列出各模块在哪个 crate。gpui 用法规则见该仓库 `AGENTS.md`。`tests/scripts/agents_md.py` 核对下表每个名字都是组件库公开项。
+依赖 `ely-gpui-component`（pin 89bff04，gpui 为 crates.io 的 `gpui-pre` =0.3.10，Rust 1.98.1）。名字取自 `reference/Ely-GPUI-Components`：总包 `src/lib.rs` 列出各模块在哪个 crate。gpui 用法规则见该仓库 `AGENTS.md`。`tests/scripts/agents_md.py` 核对下表每个名字都是组件库公开项。
 
 | 需要 | 用 |
 | --- | --- |
@@ -86,7 +86,7 @@ site/        官网（Vite 8、pnpm、TypeScript，无框架；等轴 SVG 积木
 | gpui 无 aria-disabled API（`AriaProperties` 无 disabled 字段） | 组件 7380afb 起以本地化 aria_description 表达；上游待办：gpui 补 API |
 | 组件内部文案未接 i18n（Ely 用到的组件已接：提示、默认占位、补全空行、字号示例，6df9ab0；查找框、排序与筛选、密码开关，a4bf696；`i18n/tests/shipped.rs` 防回退；其余组件之外：欢迎页标题、菜单项等） | 面板族文案已接 i18n（7380afb，内建 en/zh-CN），`CommentSidebar` 与 `RelativeTime` 同（408f2b0）；其余上游待办 |
 | PPTX 的章节：内核无此结构，导入即丢 | `ely_office::files::sections` 打开时读 `ppt/presentation.xml` 的 `p14:sectionLst`，有即 `Risk::Sections`（XML 按 BOM 与字节辨 UTF-16，UTF-32 报错）；加密的 PPTX（OLE 里的 `EncryptedPackage`）看不到章节，即 `Risk::Sealed`；二者皆横幅说明，保存改为另存副本（原文件不动），自动保存与命令行保存不写原文件 |
-| LOK 的 `.uno:StyleApply` 状态给英文界面名（`Default Paragraph Style`），样式列表给程序名（`Standard`），两者对不上；内核界面固定英文，内置样式名到不了中文 | ElyDoc `props/builtin.rs`：照 LibreOffice 26.2 的 SwStyleNameMapper、strings.hrc 与 zh-CN 译文列出内置的段落、字符、页面样式（程序名、英文、中文），状态里的界面名经它换回程序名，菜单按界面语言显示；用户自建的样式照原名。更新样式仍用状态里的界面名 |
+| LOK 的 `.uno:StyleApply` 状态给英文界面名（`Default Paragraph Style`），样式列表给程序名（`Standard`），两者对不上；内核界面固定英文，内置样式名到不了中文 | ElyDoc `props/builtin.rs`：照 LibreOffice 26.2 的 SwStyleNameMapper、strings.hrc 与 zh-CN、es、ja、ko、vi、fr、de 译文列出内置的段落、字符、页面样式（程序名、英文、中文、西班牙文、日文、韩文、越南文、法文、德文；vi 未译的条目以其用词自拟），状态里的界面名经它换回程序名，菜单按界面语言显示；用户自建的样式照原名。更新样式仍用状态里的界面名 |
 
 ## gpui 规则
 
@@ -120,20 +120,24 @@ site/        官网（Vite 8、pnpm、TypeScript，无框架；等轴 SVG 积木
 ## 命令
 
 ```text
-scripts/doctor.sh              工具链版本
-scripts/fetch-references.sh    取上游源码到 reference/
+scripts/doctor.sh              本系统构建所需的工具与系统包（与 README 的 Build 一节逐项对应）
+scripts/fetch-references.sh [名字...]  取上游源码到 reference/；给了名字只取那几个（pr.yml 只取 mupdf），不认识的名字即报错、什么都不取
+tests/scripts/references-rules.sh  fetch-references.sh 离线：只取所给的上游、不碰别的（MuPDF 的子模块），未知名字先报错
 scripts/fetch-tessdata.sh      取 OCR 语言数据到 engines/tessdata（钉提交，核对散列）
 scripts/build-git.sh           构建钉住的 Git 到 engines/git（ElyTree 随包）
 scripts/fetch-git-lfs.sh       取 git-lfs 放进 engines/git（核对散列）
 scripts/build-openssl.sh       构建钉住的静态 OpenSSL 到 engines/openssl（Intel Mac 与 Linux 的 MuPDF 用，核对散列；Mac 核对架构）
 tests/scripts/engine-arch.sh 架构  macOS 引擎里每个 Mach-O 都是该架构（ci.sh 发布前调用）
-scripts/review.sh ID 轮次 路径  审查一条任务（herdr 右侧分栏，codex gpt-6-astra，effort xhigh，fast）
+scripts/review.sh ID 轮次 路径  审查一条任务（herdr TUI 里调用者右侧分屏，其后的审查叠在下面，可并行；Claude Code，Opus 5.5，effort high；读到结论即关窗格，失败的留到本条下一轮）
+tests/scripts/review-rules.sh   review.sh 对替身 herdr：claude 起不来、提示超时、阻塞、状态读不出、空结论、窗格关不掉皆败，审查者空闲而结论晚到照等，CRLF 的 jq 照常，首个窗格在调用者右侧、其后叠在下面，读完结论即关，失败的留到本条下一轮、别条不关（三端可跑）
 scripts/apply-lo-patches.sh engines/lo-src  找出源码已到补丁序列第几个，补上其余（构建脚本调用）
 tests/scripts/lo-patches.sh    补丁序列从中途接着打、再打一次为空操作
 tests/scripts/media-targets.sh 媒体播放接口在 Linux、Windows 目标可编译（缺目标时 SKIP）
 cargo test -p ely-platform --test media  系统播放器真放 1 秒片段：可播、出帧、播完、循环、暂停守住、坏文件说原因（macOS、Windows 与 Linux）
 tests/scripts/linux-idle.sh      真窗口 ElyTree：打开仓库后、Omarchy 换主题与改设置后，空闲时不读主题、设置，不跑 git status；照样跟随换主题、改设置与改文件，经内存映射的写入也跟随
 tests/scripts/linux-backends.sh  Linux 构建带 Wayland 与 X11；Hyprland 上 ElyTree 在两者上都映射出窗口、画出页面与起始页文字（截窗口量色，tesseract 读字）
+tests/scripts/linux-xim.sh       X11 上的 ElyMark 与 fcitx5 经 XIM 建成输入上下文（`CreateIcReply`，无 XIM 错误）；fcitx5 没在跑才自起、用完即停（缺 X 显示或 fcitx5 时 SKIP；`ELY_MARK_BIN` 指定要测的构建，不设即跑 Cargo 刚建出的那个；握手前退出或超时即报退出码与应用最后的输出）
+tests/scripts/xim-rules.sh       linux-xim.sh 对替身（cargo、fcitx5、应用）：跑 Cargo 报出的构建而非 target 里的旧程序，应用握手前退出即报其退出码与错误（只在 Linux）
 tests/scripts/wayland-clipboard.sh  无头 sway（无 Xwayland，X11 剪贴板为空）里与 wl-copy、wl-paste 互相复制粘贴文字、HTML、PNG（容器内构建与运行，缺 docker 时 SKIP）
 packaging/linux/container.sh 命令  在 AlmaLinux 8 镜像里运行（glibc 2.28，gcc-toolset-15 把新的 libstdc++ 符号静态链入；引擎、应用、打包；目标在 target/alma8）
 tests/scripts/linux-glibc.sh     Linux 的应用、worker 与引擎要求的 glibc 不高于 2.31，GLIBCXX、CXXABI 不高于 GCC 10（Debian 11、Ubuntu 20.04），读版本需求表，`GLIBC_ABI_DT_RELR` 这类 ABI 标记也拒
@@ -144,7 +148,11 @@ packaging/nix.sh 标签          由该发布各 AppImage 的更新清单写 nix
 tests/scripts/nix.sh           nix.sh 按假清单写出、拒绝版本不符的清单；nix/release.json 与 apps.tsv 一致；nixos/nix 容器里 flake 的许可与表相同、ElyMark 构建并在 Xvfb 下画出（缺 docker 时 SKIP 容器部分）
 packaging/source.sh dist        本提交的源码包与随包的 copyleft 上游源码（打过补丁的 MuPDF、Git），文件名带提交号；工作区有未提交改动即拒绝（macOS 的 release.sh 与 CI 的 Linux 调用，发布只上传 Linux 的；Windows 的检出把符号链接写成文件，不出源码包）
 tests/scripts/ci-share.sh        ci.sh 只经指向 ELY_SHARE 的链接用共享引擎：自建目录、指向别处或目标带换行的链接即拒绝
-tests/scripts/ci-upload.sh       ci.sh 的上传：macOS 建源码包而不上传，Linux 上传，重跑只换本平台的同名文件、别的平台的不动（假的 GitHub API，在 Linux 或 WSL 运行）
+scripts/release-tests.sh         发布的门：建好两个 worker，严格模式跑 `cargo test --workspace`（ci.sh 打包前调用）
+scripts/test-map.py            写 docs/test-map.md：PRD 每个编号的任务与其测试（pr.yml 核对它与提交一致）
+tests/scripts/records.py         TASKS、BUGS、BugList、decisions 引用的库内文件都在，否则标“（已移除）”；引用 .work/ 须标“（本机，未入库）”（pr.yml 调用）
+tests/scripts/workflows.py       release.yml 的任务互不等待、都经 ci.sh；ci.sh 先跑 release-tests.sh 再打包；pr.yml 的 runs-on 恰为 ubuntu-24.04、以整行的 `[sudo] apt-get install` 装齐 README 的库、严格模式、panic 数比基线提交（各带反例）
+tests/scripts/ci-upload.sh       ci.sh 的上传：测试失败即一个不传；发布只建一次且为预发布；macOS 建源码包而不上传，Linux 上传，重跑只换本平台的同名文件、别的平台的不动（假的 GitHub API，在 Linux 或 WSL 运行）
 tests/scripts/linux-packages.sh  deb、rpm、Arch 包在干净的 Debian 11、Ubuntu 26.04、Fedora 44、Arch 容器里装上，每个 ELF 都找得到库
 tests/scripts/linux-pins.sh      Linux 打包工具（appimagetool、linuxdeploy、运行时、nfpm）的下载与钉的散列相符
 tests/scripts/linux-installed.sh installed|appimage  Hyprland 上装好的六个应用或 AppImage：一个窗口、随 Omarchy（Catppuccin）、读出页面文字（PDF、Markdown 经各自引擎），ElyTree 随换主题到 Latte（grim 按窗口截取）
@@ -171,6 +179,8 @@ tests/scripts/theme.sh         真窗口 ElyTable 以深、浅两种外观启动
 tests/scripts/lag.sh ely-doc   真窗口键入，从调试日志算输入落地、图块、按键到新图块的分位数（需辅助功能权限）；ELY_LAG_LOG=路径 留下日志
 tests/scripts/pdf-idle.sh      真窗口 ElyPDF 无文件启动时无 worker 子进程
 scripts/check.sh [根]            规则检查：入库代码文件不超 500 行（vendor、reference、patches 除外）、注释（comments.py，只查入库文件）、行尾（eol.sh），全部报出；JS、TS、TSX 与 HTML 脚本的注释经 `tests/scripts/comments.mjs` 由官网的 TypeScript 解析，须先在 `site/` 执行 `pnpm install`
+tests/scripts/build-deps.sh      干净的 Ubuntu 24.04、Fedora 44、Arch 容器只照 README 的 Linux 行安装：doctor.sh 装前报缺、装后整体通过、移走 make 即报缺，`ely-mail-engine`、整个工作区与官网建得成（缺 docker 时 SKIP）
+tests/scripts/doctor-rules.sh    doctor.sh 判过旧的工具为失败（替身 node，看退出码）；Cygwin 里跑也找得到其工具；Windows 上照 gpui 构建脚本的次序找 fxc：`GPUI_FXC_PATH`、PATH、SDK 注册表，皆无即报缺（替身 reg，各例自去调用者 PATH 里的 fxc）
 tests/scripts/check-rules.sh    check.sh 只数代码文件（末行无 LF 也计）、报出超长文件全名、注释与行尾的失败也使其失败
 tests/scripts/comments-rules.sh  comments.py 对长注释与跨行注释报错（含 JS、HTML 及其脚本、Python 行尾注释与文档字符串），字符串里的 # 不算，相邻的行尾注释不算跨行，未入库与 vendor 的文件不查
 tests/scripts/rpath-rules.sh     rpath.sh（release-macos.sh 逐个调用）对找不到或在包外（含 `..` 与链接）的 `@rpath` 依赖、otool 读不出的文件报错（替身 otool，任意系统可跑）
@@ -196,20 +206,31 @@ tests/scripts/autosave.sh      真窗口 ElyDoc：自动保存开关、停手即
 tests/scripts/print.sh         真窗口 ElyDoc：打印用文档自己的纸张，取消不动文档（需辅助功能权限）
 cargo test -p ely-platform --test print  Windows 经“Microsoft Print to PDF”出作业，核对纸张、方向与页面位置；Linux 起私有会话总线与替身打印门户，核对页面设置、双面、令牌与交出的字节、取消（缺 dbus-daemon 时 SKIP）
 tests/scripts/show-fullscreen.sh  真窗口 ElyShow：F5 放映的窗口盖住整块屏幕（菜单栏与程序坞之上，需辅助功能权限）
-tests/scripts/dock-macos.sh      dist 里 ElyDoc、ElyTable、ElyShow 与包外的 target/debug/ely-doc 各启动数次：LOK worker 从未登记为程序坞应用，图块照出
+tests/scripts/dock-macos.sh      dist 里第一批各 .app 与包外的 target/debug/ely-doc 各启动数次：应用自身是一个程序坞图标、观察期内不退出，子进程从未登记为程序坞应用；带内核的三个另核 worker 为 UIElement、图块照出
+tests/scripts/dock-rules.sh      dock-macos.sh 对假应用（替身 lsappinfo）：worker 类型张冠李戴、提前退出、查询失败、无用例的应用皆败（只在 macOS）
 tests/scripts/windows-bundle.sh  合集安装程序逐个静默运行所选应用的安装程序；某个被拒即停下并报出其名与退出码（缺 makensis 时 SKIP）
 tests/scripts/windows-installer.sh  假应用的安装程序：所选目录原有的文件经两次安装与卸载都在，旧版按注册表清理，文件被占用或程序在运行时什么也不改，写不进时放回旧版（缺 makensis 时 SKIP）
 tests/scripts/types.sh         packaging/types.tsv 的文件类型与 URL 方案在 Linux 桌面项、Windows 安装程序与 macOS 的 plist 里一致，macOS 的 UTI 照 MIME 类型、级别为 Alternate，URL 方案从不被接管
 tests/scripts/windows-a11y.sh   真窗口 ElyDoc 与 ElyPDF：UI Automation 的 TextPattern 读到段落、插入点与选区（含 emoji），PDF 的页文与拖选（缺引擎时 SKIP）
+tests/scripts/linux-a11y.sh     同 windows-a11y.sh，经 AT-SPI 的 Text 接口（Orca 所读）：Xvfb 在容器里，私有 AT-SPI 总线，键鼠经 XTest（缺 docker、AT-SPI 的 Python 绑定或引擎时 SKIP）
 tests/scripts/windows-names.sh  真窗口七个应用：UI Automation 里每个可操作节点与 Tab 停靠点都有名字，Tab 走得到文档、F6 出得去（样本取自 a11y-samples.sh；缺引擎时 SKIP）
 tests/scripts/linux-names.sh    同上，并核对报给辅助技术的窗口位置与 X 窗口相符，经 AT-SPI：Xvfb 在容器里经 TCP，应用与私有 D-Bus、AT-SPI 总线在本机（缺 docker、AT-SPI 的 Python 绑定或引擎时 SKIP）
+tests/scripts/macos-names.sh    同上，经 macOS 的 AX（VoiceOver 所读，`ax-names.swift`）：应用空闲后才接入，窗口按钮不算（系统自命名），Tab 停靠点至少两个（窗口按钮是原生的）（需辅助功能权限）
+tests/scripts/windows-save-as.py  真窗口 ElyDoc：另存为里键入无扩展名的名字即存为 .docx，同名先问再替换（键鼠真输入，须桌面空闲；非 Windows 时 SKIP）
+tests/scripts/windows-tab-keys.py  真窗口 ElyDoc 与 ElyShow 各开四份：真鼠标点标签、Ctrl+W、从外面再开一份，每次第一键只落在前台文档（经 `text get` 核对；键鼠真输入，须桌面空闲；非 Windows 时 SKIP）
+tests/scripts/windows-table-save-edit.py  真窗口 ElyTable：单元格键入中经命令行保存，编辑不断、其后的键接着输入（公式栏读回），盘上是保存时已输入的格，回车后再存即有全文（键盘真输入，须桌面空闲；非 Windows 时 SKIP）
+tests/scripts/windows-table-zoom.py 目录  真窗口 ElyTable：键、状态栏缩放钮（真点击）与 Ctrl+滚轮在 A1 上缩到 67%、125%、400%，首个行列标题是 A、1（UI Automation），截图里网格线量出 A1 与 B2 一般宽高、光标框正落在 A1 的线上，日志的视图起点为 (0, 0)；滚轮在 C7 上时它的角到指针的像素不变；全部报出；截图写入该目录（键鼠真输入，须桌面空闲；非 Windows 时 SKIP）
 tests/scripts/windows-types.sh  真安装程序以假类型 `.elyprobe` 写 HKCU：能打开、只在无处理程序时设默认与“新建”、假方案 `elyprobe:` 进“默认应用”而不接管、别的程序的登记与“新建”不动、换了文件夹后旧卸载不删新的、写不进即安装失败（缺 makensis 时 SKIP）
 tests/scripts/layout.sh        真窗口：六个应用在 640、800、1100 宽下无元素越出窗口左右，留截图（需辅助功能与屏幕录制权限）
 tests/perf/bench.py [--runs N] [--only PERF-..]  性能基准（PERF-01 至 08），release 构建，结果写 docs/perf；macOS、Windows 直接跑（驱动 tests/perf/drive.py、drive.ps1，Windows 上不在前台即拒发输入）
+tests/perf/load.py [--docs N] [--rounds R] [--keys K] [--apps ...]  PERF-10 极限负载：Doc、Table、Show、Mark 各开 N 份（默认 100；每十份一份大的，Doc 另有外部链接的，大工作簿含复杂公式与跨工作簿引用；样本由 loadfiles.py 以 Python 写，不经 Office），前台文档空闲时与其余文档同时经命令行编辑时各按键量反馈、帧与主线程停顿，全部保存后读盘核对编辑、按键与链接，结果写 docs/perf/<日期>-<机型>-load-N.md（frames 发行构建，只在 Windows 实测过）；可用内存低于 12 GB 即停；有人点击或挪动窗口即作废重来，至多三次
+tests/perf/extreme.py [--cases ...]  PERF-10 的极端情形，真窗口逐项核对：链接源缺失、源已改（关着与开着）、三份文档切标签时键入与同时编辑、键入中保存、关闭未保存（询问、取消、保存）、编辑中杀掉引擎后从恢复点重开、缩放 25% 至 400% 与滚轮（截图留看）、20 份同时交来再逐个关闭、单个超大文件（500 页 docx、6 万行 xlsx、189 页 pptx、7 MB md）；结果写 docs/perf/<日期>-<机型>-extreme.md（只在 Windows）
+tests/perf/bigtable.py 输出 行数 宽 高 jpeg|png inline|anchor|tight [英寸 [cantsplit]]  一张大表格的 DOCX：一列图片一列中文（R14.48 的样本）
 tests/perf/linux.sh [参数]      Linux 上的 bench.py：容器里的 Xvfb、私有 AT-SPI 总线（atspi.py）
-tests/scripts/ooxml.py <用例> <文件>  不经 LibreOffice 读 DOCX、XLSX、PPTX 并按自算的预期核对（往返用例调用）
+tests/scripts/ooxml.py <用例> <文件>  不经 LibreOffice 读 DOCX、XLSX、PPTX 并按自算的预期核对（往返用例调用）；ooxml_pivot.py 同法核对透视表的标签与标题属性，ooxml_motion.py 核对视频的淡入与触发序列，ooxml_formula.py 核对公式文字，ooxml_word.py 核对 Word 公式（减号、双线体）与目录
+tests/office/compare.ps1 目录   本机 Microsoft Office 经 COM 写出大而复杂的 DOCX、XLSX、PPTX，Ely 内核打开、写入、另存，新引擎重开核对；Office 读回两份，比内容摘要（文字、公式与重算的值、批注、备注、域的目标、动画，Word 更新域后每页的起始），不符即失败（已知差异钉住前后值；须 ELY_LOK_DIR，只在 Windows）
 cd site && pnpm run deploy    官网构建并经 wrangler 发到 Cloudflare Workers（静态资源，另有 `site/worker` 只答 `/release.json`：GitHub API 的最新版本、其中三个完整安装包（Mac arm64、Mac x86_64、Windows）的地址与全部发布的下载总数，加上 Gitea 上迁移前的下载（Gitea 不通时只计 GitHub；都不计更新清单 `.json`），缓存 5 分钟；下载按钮按访客的平台直接下载完整安装包，Linux 与单独的应用指向 `releases/latest`），地址 https://office.elygpui.com（workers.dev 地址 https://ely-office.zhangyanghaha0407.workers.dev 同站）
-cd site && pnpm test && pnpm e2e   官网单测（几何、道路连通）与 Playwright 端到端（悬停、聚焦、按压、命中归属）
+cd site && pnpm test && pnpm e2e   官网单测（几何、道路连通；更新日志与 git 的 v* 标签一一对应，每次发布加 `site/changelog/<版本>.md` 并部署；命令行页含各应用 USAGE 的每条命令）与 Playwright 端到端（悬停、聚焦、按压、命中归属）
 cd site/video/scenes && npm run verify   发布视频：群像与离场两个渲染器在切场处屏幕角点一致，离场全程各屏播自己的录屏帧（真页面渲染）
 scripts/deny.sh [根] [检查...]  cargo-deny：安全公告、yanked、许可与来源；重复版本只许 deny.toml 里列着的组，组消失而 skip 还在即败（只减不增）
 tests/scripts/deny-rules.sh    deny.sh：列着的重复组过、多余或无着落的 skip 败、去掉的旧版回来败（临时 crate）
@@ -220,6 +241,7 @@ cargo test --workspace
 ELY_GIT=路径 cargo test -p ely-tree  ElyTree 测试用该 Git（系统 Git 须 2.40 起）；不设即用 engines/git 的随包 Git，都没有即失败
 rm -rf target/debug/incremental   每次构建或测试后都删（用户定：增量缓存会占满磁盘）
 cargo build -p ely-lok --bins   LOK 单测前先建 worker；单测不会自动重建它
+ELY_REQUIRE_ENGINES=1 cargo test  缺 LOK 构建的测试即失败（不设时打 SKIP 后通过）
 cargo build -p ely-pdf-worker  ElyPDF 与 ElyMark 的 worker（链接 engines/mupdf-build，ELY_MUPDF_DIR 可改；运行时 ELY_PDF_WORKER 可指定）
 cargo run -p ely-doc          启动一个应用（ElyDoc 先 cargo build -p ely-lok --bins，LOK 取 ELY_LOK_DIR 或 engines/ 下的构建）；ELY_LOG 设日志级别；ELY_SMOKE=1 开窗口、画一帧即退出，ELY_SMOKE=hold 开着不抢焦点；ELY_NO_DIALOG=1 启动失败不弹对话框
 ELY_FRAMES=1                  以 `--features frames` 构建的应用每 2 秒（有绘制时）记一行帧时间：绘制与“弄脏到呈现”的分位数、超过 8.3 毫秒的帧数（gpui 的 profiler 日志）；ELY_DATA_ROOT=绝对路径 换掉数据的默认位置，指向文件也在其中（只供基准与测试，不碰用户数据）
@@ -230,21 +252,23 @@ ELY_FRAMES=1                  以 `--features frames` 构建的应用每 2 秒�
 完整记录（按日期，含实现细节与实测）在 `docs/decisions.md`。新的决定追加到那里；改变下列常规的，同时改本节。
 
 - 上游：LibreOffice 26.2.6、MuPDF 1.28.5、Git 2.56.0 加 git-lfs 3.8.0、`gpui-pre` =0.3.10，以 `scripts/fetch-references.sh` 为准；组件库跟随其 main，修复在组件库仓库里做并推上去，再改 pin。
-- 仓库与发布在 GitHub 组织 ELY-Open-Source（ElyOffice、Ely-GPUI-Components）。推 `v*` 标签即运行 `.github/workflows/release.yml`：自托管机器上以 `scripts/ci.sh` 构建 macOS（arm64，Rosetta 下的 Intel）、Windows、Linux（WSL 里的 AlmaLinux 8 容器）并上传。引擎经 `ELY_SHARE` 共用，新的 LibreOffice 补丁须先在三台机器的共享引擎上重建。
+- 仓库与发布在 GitHub 组织 ELY-Open-Source（ElyOffice、Ely-GPUI-Components）。推 `v*` 标签即运行 `.github/workflows/release.yml`：自托管机器上以 `scripts/ci.sh` 构建 macOS（arm64，Rosetta 下的 Intel）、Windows、Linux（WSL 里的 AlmaLinux 8 容器）并上传；四个任务互不等待，`ci.sh` 打包前先以 `scripts/release-tests.sh` 跑全部测试（`ELY_REQUIRE_ENGINES=1`），一个失败即不出包；最先上传的平台把发布建成预发布，四端都上传、核对过后再改为正式并设为最新（`releases/latest` 是官网下载与应用更新所读）。引擎经 `ELY_SHARE` 共用，新的 LibreOffice 补丁须先在三台机器的共享引擎上重建。
 - Git：main 的历史不改写；提交签名，不写任何署名行。
 - 许可：自有代码 MIT；随包引擎照各自的许可，Linux 包的许可字段取 `packaging/apps.tsv`。
 - macOS 发布以 Developer ID 签名并公证（`ELY_SIGN_IDENTITY`、`ELY_NOTARY_PROFILE`），缺即失败，不出未公证的包。
 - 首批发布 ElyDoc、ElyTable、ElyShow、ElyPDF、ElyMail、ElyTree、ElyMark；ElyAgent 第二批。
 - 数据只在 `ely_platform::data_dir` 给出的目录；用户文档永不碰；卸载先问。根默认在系统的本地数据目录；设置“存储”可换到所选文件夹下的 `ElyOffice`，指向文件 `folder.json` 留在默认位置，下次启动、无 Ely 应用在运行时搬动（`ely_platform::folder`）。
 - 文件类型只写在 `packaging/types.tsv`，只进“打开方式”，从不设为默认（Windows 的“新建”只在该类型无任何处理程序时设）。URL 方案也写在那里，第二列以冒号结尾（`mailto:`）：Linux 的 `x-scheme-handler` 与 `%U`，Windows 的 `Capabilities\URLAssociations` 与 `RegisteredApplications`（只进“默认应用”供选，从不写 `Classes\mailto`），macOS 的 `CFBundleURLTypes`；链接经 `ely_ui::mail_link` 原样交到应用，ElyMail 以引擎的 `mailto` 照 RFC 6068 填好新信（引号里的逗号不切、域名转 IDNA、主题解 MIME 编码词）。“打开方式”里不得出现 LibreOffice，任何脚本都不挂载 LibreOffice 镜像。
-- 语言：界面英文与简体中文；内核界面固定英文，内核给出的固定文字（ElyTable 的状态与错误、单元格样式，ElyDoc 的内置样式名）由 Ely 按界面语言重写，文件与主题资源自带的名字（母版、主题色集、用户样式、字体）照原样；ElyTable 公式为 Excel A1、数字按 en-US；拼写词典只随英文。
+- 语言：界面英文、简体中文、西班牙语（es-ES，系统 es-* 同用）、法语（fr-FR，系统 fr-* 同用）、德语（de-DE，“Deutsch”，系统 de-* 同用）、日语（ja-JP，系统 ja-* 同用）、韩语（ko-KR，系统 ko-* 同用）与越南语（vi-VN，“Tiếng Việt”，系统 vi-* 同用），每个应用各语言都全，任一目录缺键即失败，不以英文补；内核界面固定英文，内核给出的固定文字（ElyTable 的状态与错误、单元格样式，ElyDoc 的内置样式名）由 Ely 按界面语言重写，译文照 LibreOffice 26.2.6.3 该语言的译文，文件与主题资源自带的名字（母版、主题色集、用户样式、字体）照原样；ElyTable 导入非 UTF-8 的文本时预选界面语言的 Windows 代码页（中文 GB18030，日文 Shift_JIS，即 Windows-932，韩文 Windows-949，英文、西班牙文、法文、德文 Windows-1252，越南文 Windows-1258）；ElyTable 公式为 Excel A1、数字按 en-US；拼写词典只随英文。
 - 外观：Doc、Table、Show、PDF 的页面照文件原色，只有四周的界面随深浅色；邮件正文、Mark、Agent 随深浅色。深色底 `#252525`，不用纯黑。有 Omarchy 时随 Omarchy。
 - 性能：八个应用都不许卡顿（120 FPS 手感，树莓派 3 也要流畅），输入延迟与帧时间实测验收；界面线程不等内核、不持 worker 锁，空闲不做事。
 - LOK：worker 启动时关掉内核的 OpenCL（`SAL_DISABLE_OPENCL=1`：其启动自检在 AMD 驱动里会卡死，Calc 在 CPU 上算）；界面只经 `ely_lok::commands::COMMANDS` 发 UNO 命令；内核弹出的对话框即刻关闭并报错，需要的对话框由 Ely 自建；内核改动只以 `patches/libreoffice` 的补丁序列进入。
 - 更新：每个应用每个平台一份清单，读 GitHub 的最新发布（`releases/latest/download`，不调 API）；清单以 ed25519 签名（`<清单>.sig`，签的是文件名加内容），公钥编进应用（`ely_platform::update::KEY`），缺签名或不符即拒；种子是组织机密 `ELY_UPDATE_KEY`，本机副本 `update-key.txt` 不入库，丢失即旧版再也收不到更新；自动检查默认关，从不静默安装；包管理器与 Nix 装的不自更新，只提示。
 - 每个应用只跑一份，再次启动把文件交给运行中的那份。
 - 本机别的程序经 `ely-table cell docs|get|set|save` 读写 ElyTable 已打开工作簿的单元格并保存：请求走实例门（本机回环、令牌文件只给同一用户），由应用以 `ely_ui::on_ask` 作答；始终开着；按地址读写由内核补丁 0058 完成，不动用户的光标与选区。ElyDoc 同样经 `ely-doc text docs|get|replace|save`：读的是内核导出的 fodt 副本里正文的段落（`ely_office::remote::body_text`，不含脚注、批注、文本框与删除的修订），替换是 Writer 的全部替换（精确、区分大小写、静默，光标照旧，一步撤销，一处没有即报错）。ElyShow 经 `ely-show text docs|get|replace|save`：读 fodp 副本里每张幻灯片的文本对象（`ely_office::remote::slide_text`，一段一行，幻灯片之间换页符，不含备注与批注，正是 LOK 下 Impress 全部替换所及），替换同为 `text.replace`，照 Impress 每个改到的文本框一步撤销；Impress 有选中对象时只在其中替换，故先取消选中、替换后按序号重选（重读对象核对未变，再以新版本号选），所在幻灯片与选中照旧。ElyMark 经 `ely-mark text docs|get|replace|save`：读的是文档此刻的 Markdown 原文（含未写回的键入），替换是原文里精确、区分大小写的全部替换，经组件库 `MarkdownDocument::replace` 先写回开着的块、一步撤销；预览模式拒绝。命令行、`docs`、`save` 与按文件找标签在 `ely_office::remote`，各应用只写自己的动词。
+- ElyTable 的 R 宏（实验性，TABLE-17）：只在用户点运行时以参数数组起 `Rscript --vanilla`（不经 shell），处理所选区域的类型化副本，只用 base R；Rscript 依次取 `ELY_RSCRIPT`、PATH、R 的安装位置，找不到即说明如何安装，从不代装；R 不是沙箱，以用户权限运行；Windows 上进 Job 对象、Unix 上自成进程组，停止、关对话框或 30 秒即整树结束；返回的整批先校验，worker 核对版本号，内核（补丁 0081）重读选区后在一个撤销组里写值、表头与列宽；公式只读；日志不含代码、单元格值与 R 的输出。详见 `docs/r-macros.md`。
 - ElyMark 原生实现（组件库 Markdown 组件与其 Markdown 树），不用 CEF、Electron；Typora 只作参照，读同一文件不同时随 GitHub（GFM）。
 - ElyMail：IMAP 与 POP3 由引擎自写，SMTP 用 mail-send；Microsoft 走 OAuth，客户端 ID 构建时注入（本机 `cred.txt`，CI 为组织机密），缺即构建失败；Gmail 与 iCloud 走应用专用密码。网络随系统代理。
 - ElyAgent 以 Rust 依赖直接嵌入 Kigi CLI，不用 ACP。
-- 审查：每条任务由 `scripts/review.sh` 交 codex 审查，至多三轮。
+- 合并前：`.github/workflows/pr.yml` 在每个 PR 与 main 的推送上，以 GitHub 托管的 Ubuntu 建 MuPDF（PDF worker 才编得过）后跑 check.sh、deny.sh、panics.py（数量比 PR 的基线或推送前的提交）、整个工作区的 clippy（告警即败）与不需引擎的测试（严格模式）；PR 从不上自托管机器，带引擎的全部测试是发布的门（release-tests.sh）。
+- 审查：每条任务由 `scripts/review.sh` 交另一个 Claude Code（Opus 5.5，effort high）审查，至多三轮。

@@ -7,15 +7,13 @@ const TEXT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
  <office:body><office:text><text:p>The cat saw a Cat and a dog. Teh cat ran wiht cats.</text:p></office:text></office:body>
 </office:document>"#;
 
-const WAIT: std::time::Duration = std::time::Duration::from_secs(5);
-
 /// Runs a search and returns its matches.
 fn search(worker: &mut Worker, doc: &Doc, seen: &mut Events, id: &str, values: &[&str]) {
     let before = seen.searched;
     worker
         .run(doc, id, values)
         .unwrap_or_else(|error| panic!("{id}: {error}"));
-    *seen = poll_until(worker, doc, seen, WAIT, |seen| seen.searched > before);
+    *seen = poll_until(worker, doc, seen, HANG, |seen| seen.searched > before);
     assert!(seen.searched > before, "{id} reports an outcome");
 }
 
@@ -33,7 +31,7 @@ fn menu(worker: &mut Worker, doc: &Doc, seen: &mut Events, (x, y): (i32, i32)) -
         };
         worker.post_mouse(doc, event).expect("the click posts");
     }
-    *seen = poll_until(worker, doc, seen, WAIT, |seen| seen.menu.is_some());
+    *seen = poll_until(worker, doc, seen, HANG, |seen| seen.menu.is_some());
     seen.menu.take()
 }
 
@@ -124,11 +122,16 @@ fn spelling_suggests_and_ignores() {
         &["Teh", "false", "0", "0", "0", "1"],
     );
     let (x, y, _, h) = seen.found[0];
-    let json = menu(&mut worker, &doc, &mut seen, (x + 60, y + h / 2)).expect("a menu");
-    let spelling = menu::read(&json)
-        .expect("the menu parses")
-        .spelling
-        .expect("a spelling menu");
+    // Writer's idle spell check marks the word later.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let spelling = loop {
+        let json = menu(&mut worker, &doc, &mut seen, (x + 60, y + h / 2)).expect("a menu");
+        let spelling = menu::read(&json).expect("the menu parses").spelling;
+        if spelling.is_some() || std::time::Instant::now() > until {
+            break spelling.expect("a spelling menu");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    };
     let (_, rule) = spelling
         .suggestions
         .iter()

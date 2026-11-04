@@ -12,13 +12,16 @@ mod events;
 #[cfg(unix)]
 mod fatal;
 mod input;
-mod password;
+mod asked;
+pub(crate) mod closing;
 mod revision;
 mod slides;
 mod teardown;
 mod text;
 #[cfg(windows)]
 mod messages;
+#[cfg(windows)]
+pub(crate) mod stdin;
 #[cfg(windows)]
 use messages::serve;
 #[cfg(target_os = "linux")]
@@ -40,6 +43,8 @@ pub fn run(
     let profile_dir = dunce::canonicalize(profile_dir)?;
     let profile_url = profile_url_of(&profile_dir);
     let _ = teardown::PROFILE.set(profile_dir.clone());
+    #[cfg(windows)]
+    messages::unaware()?;
     let lok = Lok::hook(Path::new(install), &profile_url)?;
     #[cfg(unix)]
     fatal::watch();
@@ -51,11 +56,10 @@ pub fn run(
 fn serve(lok: Lok, input: impl io::Read + Send + 'static) -> io::Result<()> {
     let lok = Box::leak(Box::new(lok));
     pin(lok);
-    lok.register_callback(password::on_kit);
+    closing::watch()?;
+    lok.register_callback(asked::on_kit);
     lok.register_any_input(waiting);
-    unsafe {
-        gcd::dispatch_async_f(gcd::main_queue(), std::ptr::null_mut(), mark_pumping);
-    }
+    unsafe { gcd::dispatch_async_f(gcd::main_queue(), std::ptr::null_mut(), mark_pumping) };
     std::thread::spawn(move || reader(input));
     std::thread::spawn(events::push);
     // Aqua never polls: GCD brings the requests.
@@ -257,7 +261,7 @@ fn answer(lok: &Lok, tag: u8, id: u64, payload: &[u8]) {
                     doc.set_client_zoom(pixels, twips);
                     doc.set_visible_area(x, y, w, h)
                 })
-                .inspect(|_| crate::events::rescaled(id, (pixels, twips)))
+                .inspect(|_| { crate::events::rescaled(id, (pixels, twips)); crate::events::shown(id, (x, y, w, h)) })
             })
             .map(|()| Vec::new()),
         tag::SELECTION_TEXT => unpack
@@ -308,17 +312,18 @@ fn load(lok: &Lok, url: &str, password: String, filter: &str) -> io::Result<u64>
             "a password with NUL",
         ));
     }
-    password::arm(Some(password).filter(|password| !password.is_empty()));
+    asked::arm(Some(password).filter(|password| !password.is_empty()));
     // LOK hands what it does not take to the filter.
     let options = match filter {
         "" => LOAD_OPTIONS.to_owned(),
         filter => format!("{LOAD_OPTIONS},{filter}"),
     };
     let loaded = lok.load(url, &options);
-    let refused = password::refused();
-    password::arm(None);
+    let (refused, damaged) = (asked::refused(), asked::damaged());
+    asked::arm(None);
     let doc = match loaded {
         Err(_) if refused => return Err(io::Error::other(ipc::LOCKED)),
+        Err(_) if damaged => return Err(io::Error::other(ipc::DAMAGED)),
         loaded => loaded?,
     };
     // A session number per load; native pointers get reused.
@@ -354,6 +359,7 @@ fn close(id: u64) {
     if let Some(doc) = docs.get(&id) {
         crate::events::unwatch(id, doc);
     }
+    closing::forget(id);
     docs.remove(&id);
     revision::forget(id);
     slides::forget(id);
@@ -374,7 +380,7 @@ fn verify(lok: &Lok, url: &str) -> io::Result<u64> {
     // Past the 2 cm margin, where the text sits.
     doc.paint_rect(&mut tile, (64, 64), (0, 0, 3000, 3000));
     drop(doc);
-    let red = tile.chunks_exact(4).filter(|px| px[2] > 200 && px[0] < 80 && px[1] < 80).count();
+    let red = tile.as_chunks::<4>().0.iter().filter(|px| px[2] > 200 && px[0] < 80 && px[1] < 80).count();
     log::info!("lok-worker: tile self-check found {red} red pixels");
     Ok(red as u64)
 }
@@ -411,13 +417,14 @@ fn save(unpack: &mut Unpack) -> io::Result<()> {
     let url = unpack.str()?;
     let format = unpack.str()?;
     let options = unpack.str()?;
-    if !options.is_empty() && options != "TakeOwnership" {
+    if !matches!(options.as_str(), "" | "TakeOwnership" | "TakeOwnership,TerminateEditing") {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "unknown save option",
         ));
     }
-    with_doc(id, |doc| doc.save_as(&url, &format, &options))??;
+    with_doc(id, |doc| doc.save_as(&url, &format, &options))?
+        .map_err(|error| io::Error::other(format!("{error}: {}", lok().error())))?;
     log::info!("lok-worker: saved as {format} to {url} ({options})");
     Ok(())
 }

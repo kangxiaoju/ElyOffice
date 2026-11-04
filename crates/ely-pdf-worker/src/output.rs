@@ -73,13 +73,19 @@ impl Mupdf {
 }
 
 impl crate::Worker {
-    /// MuPDF warned on reading: the file is damaged.
-    fn note_damage(&mut self, id: u64) -> io::Result<()> {
+    /// MuPDF warned on reading a PDF: it is damaged.
+    fn note_damage(&mut self, id: u64) -> io::Result<bool> {
         let doc = self.docs.get_mut(&id).ok_or_else(|| io::Error::other(format!("no document {id}")))?;
+        // An EPUB's warnings are about its styles.
+        if !doc.pdf {
+            let said = open_warnings();
+            log::info!("pdf-worker: document {id} warned while laying out, {} bytes", said.len());
+            return Ok(false);
+        }
         let report = doc.repair.get_or_insert_with(String::new);
         report.push_str(&open_warnings());
         log::warn!("pdf-worker: document {id} is damaged");
-        Ok(())
+        Ok(true)
     }
 
     /// A text read; damage it meets waits for a draw.
@@ -87,8 +93,7 @@ impl crate::Worker {
         let doc = self.doc(id)?;
         unsafe { ely_watch_begin(self.mupdf.ctx) };
         let answer = read(&self.mupdf, doc);
-        if unsafe { ely_watch_end(self.mupdf.ctx) } != 0 {
-            self.note_damage(id)?;
+        if unsafe { ely_watch_end(self.mupdf.ctx) } != 0 && self.note_damage(id)? {
             self.docs.get_mut(&id).expect("just read").found = true;
         }
         answer
@@ -104,10 +109,7 @@ impl crate::Worker {
     pub(crate) fn drawn(&mut self, id: u64, page: usize, view: (f32, i32), tile: [i32; 4]) -> io::Result<Vec<u8>> {
         unsafe { ely_watch_begin(self.mupdf.ctx) };
         let pixels = self.mupdf.render(self.doc(id)?, page, view, tile);
-        let warned = unsafe { ely_watch_end(self.mupdf.ctx) } != 0;
-        if warned {
-            self.note_damage(id)?;
-        }
+        let warned = unsafe { ely_watch_end(self.mupdf.ctx) } != 0 && self.note_damage(id)?;
         let pixels = pixels?;
         let damaged = warned | self.found(id)?;
         Ok(Pack::new().u64(u64::from(damaged)).blob(&pixels).bytes())
@@ -116,10 +118,7 @@ impl crate::Worker {
     /// Every picture decoded before an overwrite; true if any failed.
     pub(crate) fn check_pictures(&mut self, id: u64) -> io::Result<Vec<u8>> {
         let failed = checked(unsafe { ely_check_pictures(self.mupdf.ctx, self.doc(id)?.0) })? != 0;
-        if failed {
-            self.note_damage(id)?;
-        }
-        let failed = failed | self.found(id)?;
+        let failed = (failed && self.note_damage(id)?) | self.found(id)?;
         Ok(Pack::new().u64(u64::from(failed)).bytes())
     }
 
@@ -144,7 +143,7 @@ impl crate::Worker {
             let fresh = mupdf.open(utf8(&copy)?)?;
             let ready = (|| {
                 if mupdf.locked(&fresh)? && mupdf.unlock(&fresh, &doc.password)? == 0 {
-                    return Err(io::Error::other("the repaired copy refused the password"));
+                    return Err(ely_ipc::Worded::error(io::ErrorKind::PermissionDenied, "pdf.error.repaired_password", &[]));
                 }
                 mupdf.journal(&fresh)
             })();
@@ -178,7 +177,7 @@ impl crate::Worker {
         if matches!(kind, tag::EXPORT_IMAGE | tag::EXPORT_TEXT) && doc.found {
             refuse(may::COPY, has)?;
             let report = doc.repair.as_deref().expect("noted with the damage");
-            return Err(io::Error::other(format!("the document did not read whole: {report}")));
+            return Err(ely_ipc::Worded::error(io::ErrorKind::InvalidData, "pdf.error.not_whole", &[("report", report)]));
         }
         match kind {
             tag::EXPORT_IMAGE => {

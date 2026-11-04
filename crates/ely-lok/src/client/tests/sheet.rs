@@ -15,7 +15,7 @@ fn a11y_follows_calc_cells() {
     worker.post_key(&doc, 0, 1027).expect("Right to B1");
     let b1 = poll_until(&mut worker, &doc, &base, SETTLE, |_| false);
     worker.post_key(&doc, 0, 1026).expect("Left to A1");
-    let a1 = poll_until(&mut worker, &doc, &b1, SETTLE, |seen| {
+    let a1 = poll_until(&mut worker, &doc, &b1, HANG, |seen| {
         seen.a11y.text == "Hello 世界"
     });
     assert_eq!(
@@ -23,7 +23,7 @@ fn a11y_follows_calc_cells() {
         "the cell text bridges without editing"
     );
     worker.post_key(&doc, 0, 1027).expect("Right to B1 again");
-    let empty = poll_until(&mut worker, &doc, &a1, SETTLE, |seen| {
+    let empty = poll_until(&mut worker, &doc, &a1, HANG, |seen| {
         seen.a11y.text.is_empty()
     });
     assert_eq!(empty.a11y.text, "", "the empty B1 clears the bridge");
@@ -54,12 +54,12 @@ fn a_cancelled_cell_edit_restores_the_cell_text() {
     worker
         .post_key(&doc, 'Z' as u32, 537 | 0x1000)
         .expect("Z types");
-    let typed = poll_until(&mut worker, &doc, &base, SETTLE, |seen| {
+    let typed = poll_until(&mut worker, &doc, &base, HANG, |seen| {
         seen.a11y.text.ends_with('Z')
     });
     assert_eq!(typed.a11y.text, "Hello 世界Z", "the edit bridges");
     worker.post_key(&doc, 0, 1281).expect("Escape cancels");
-    let back = poll_until(&mut worker, &doc, &typed, SETTLE, |seen| {
+    let back = poll_until(&mut worker, &doc, &typed, HANG, |seen| {
         seen.a11y.text == "Hello 世界"
     });
     assert_eq!(back.a11y.text, "Hello 世界", "the cancel restores the cell");
@@ -83,21 +83,21 @@ fn undo_and_redo_work_inside_a_cell_edit() {
         worker
             .post_key(&doc, 'Z' as u32, 537 | 0x1000)
             .expect("Z types");
-        let typed = poll_until(&mut worker, &doc, &base, SETTLE, |seen| {
+        let typed = poll_until(&mut worker, &doc, &base, HANG, |seen| {
             seen.a11y.text == "Hello 世界Z"
         });
         assert_eq!(typed.a11y.text, "Hello 世界Z");
         worker
             .run(&doc, "edit.undo", &[])
             .expect("undo in the edit");
-        let undone = poll_until(&mut worker, &doc, &typed, SETTLE, |seen| {
+        let undone = poll_until(&mut worker, &doc, &typed, HANG, |seen| {
             seen.a11y.text == "Hello 世界"
         });
         assert_eq!(undone.a11y.text, "Hello 世界", "history {with_history}");
         worker
             .run(&doc, "edit.redo", &[])
             .expect("redo in the edit");
-        let redone = poll_until(&mut worker, &doc, &undone, SETTLE, |seen| {
+        let redone = poll_until(&mut worker, &doc, &undone, HANG, |seen| {
             seen.a11y.text == "Hello 世界Z"
         });
         assert_eq!(redone.a11y.text, "Hello 世界Z", "history {with_history}");
@@ -130,7 +130,7 @@ fn sheets_list_switch_and_the_cell_reports() {
         .collect();
     assert_eq!(names, [("S", true), ("T", false), ("U", true)]);
     assert_eq!(sheets.current, 0);
-    let first = poll_until(&mut worker, &doc, &Events::default(), SETTLE, |seen| {
+    let first = poll_until(&mut worker, &doc, &Events::default(), HANG, |seen| {
         seen.cell.address == "A1" && seen.cell.formula == "Hello 世界" && seen.cell.cursor.is_some()
     });
     assert!(first.cell.cursor.is_some(), "the cell cursor shows on load");
@@ -143,7 +143,7 @@ fn sheets_list_switch_and_the_cell_reports() {
     worker.post_key(&doc, 0, 1027).expect("Right to B1");
     worker.post_key(&doc, 0, 1024).expect("Down to B2");
     worker.post_key(&doc, 0, 1024).expect("Down to B3");
-    let b3 = poll_until(&mut worker, &doc, &first, SETTLE, |seen| {
+    let b3 = poll_until(&mut worker, &doc, &first, HANG, |seen| {
         seen.cell.address == "B3"
     });
     let (x, y, _, _) = b3.cell.cursor.expect("the cell cursor");
@@ -155,7 +155,7 @@ fn sheets_list_switch_and_the_cell_reports() {
     let first = b3;
     doc.show_sheet(&mut worker, 2).expect("U shows");
     assert_eq!(doc.sheets(&mut worker).expect("the sheets").current, 2);
-    let third = poll_until(&mut worker, &doc, &first, SETTLE, |seen| {
+    let third = poll_until(&mut worker, &doc, &first, HANG, |seen| {
         seen.cell.formula.starts_with('=')
     });
     assert!(
@@ -206,14 +206,77 @@ fn the_pointer_is_text_only_while_a_cell_edits() {
         worker.post_mouse(&doc, at).expect("hovers");
     };
     hover(&mut worker, 400);
-    let reading = poll_until(&mut worker, &doc, &Events::default(), SETTLE, |seen| {
+    let reading = poll_until(&mut worker, &doc, &Events::default(), HANG, |seen| {
         !seen.pointer.is_empty()
     });
     assert_eq!(reading.pointer, "default", "a cell shows the arrow");
     worker.post_key(&doc, 0, 769).expect("F2 edits A1");
     hover(&mut worker, 500);
-    let editing = poll_until(&mut worker, &doc, &reading, SETTLE, |seen| {
+    let editing = poll_until(&mut worker, &doc, &reading, HANG, |seen| {
         seen.pointer == "text"
     });
     assert_eq!(editing.pointer, "text", "the edited cell shows the text pointer");
+}
+
+#[test]
+fn pasted_lines_of_tabbed_text_fill_cells_without_a_dialog() {
+    if install().is_none() {
+        eprintln!("SKIP: no pinned LOK build");
+        return;
+    }
+    let (_dir, mut worker, doc) = open_sheet();
+    for row in 3..=8 {
+        for column in ["A", "B", "C"] {
+            worker.run(&doc, "cell.set", &[&format!("S!{column}{row}"), "old"]).expect("old content");
+        }
+    }
+    let mut seen = poll_until(&mut worker, &doc, &Events::default(), SETTLE, |_| false);
+    // Issue #56: Chinese lines, empty fields, a quoted line break.
+    let blocks = [
+        ("A3", "商品名称\t规格\t\nA4纸\t\t\n"),
+        ("A6", "商品\t\"一行\n二行\"\t50\n另一件\t规格\t60\n"),
+        ("A8", "x\t\"一行\n\"\t\"\n\"\n"),
+    ];
+    for (at, text) in blocks {
+        worker.run(&doc, "cell.goto", &[at]).expect("the target");
+        let pasted = worker.paste(&doc, "text/plain;charset=utf-8", text.as_bytes());
+        seen = poll_until(&mut worker, &doc, &seen, SETTLE, |_| false);
+        assert!(seen.blocked.is_empty(), "no dialog opens: {:?}", seen.blocked);
+        pasted.expect("the text pastes");
+    }
+    let mut cell = |address: &str| {
+        let json = worker.values(&doc, &crate::sheet::cell_at_query(&format!("S!{address}"))).expect("a cell");
+        crate::sheet::cell_at(&json).expect("readable").text
+    };
+    let rows: Vec<Vec<String>> = (3..=8).map(|row| ["A", "B", "C"].map(|column| cell(&format!("{column}{row}"))).to_vec()).collect();
+    assert_eq!(
+        rows,
+        [
+            ["商品名称", "规格", ""],
+            ["A4纸", "", ""],
+            ["old", "old", "old"],
+            ["商品", "一行\n二行", "50"],
+            ["另一件", "规格", "60"],
+            ["x", "一行\n", "\n"],
+        ]
+    );
+}
+
+#[test]
+fn a_skipped_trailing_column_keeps_its_cell() {
+    if install().is_none() {
+        eprintln!("SKIP: no pinned LOK build");
+        return;
+    }
+    let (_dir, mut worker, doc) = open_sheet();
+    worker.run(&doc, "cell.set", &["S!A3", "one\ttwo\t"]).expect("A3");
+    worker.run(&doc, "cell.set", &["S!C3", "old"]).expect("C3");
+    worker.run(&doc, "cell.goto", &["A3"]).expect("A3");
+    // Text to Columns by tab, the third column skipped
+    worker.run(&doc, "data.columns", &["9,34,76,1,3/9,0,false,true,false,false,false,0,false"]).expect("the split");
+    let mut cell = |address: &str| {
+        let json = worker.values(&doc, &crate::sheet::cell_at_query(&format!("S!{address}"))).expect("a cell");
+        crate::sheet::cell_at(&json).expect("readable").text
+    };
+    assert_eq!(["A3", "B3", "C3"].map(&mut cell), ["one", "two", "old"]);
 }

@@ -24,12 +24,17 @@ uti() {
     application/vnd.oasis.opendocument.presentation) echo org.oasis-open.opendocument.presentation ;;
     application/vnd.ms-powerpoint) echo com.microsoft.powerpoint.ppt ;;
     application/pdf) echo com.adobe.pdf ;;
+    application/epub+zip) echo org.idpf.epub-container ;;
     text/markdown) echo net.daringfireball.markdown ;;
     message/rfc822) echo com.apple.mail.email ;;
     inode/directory) echo public.folder ;;
     *) fail "no UTI known for $1" ;;
   esac
 }
+# Every first-batch app opens a file type or a link.
+for slug in $(awk -F'\t' '$4 == 1 { print $1 }' "$root/packaging/apps.tsv"); do
+  cut -f1 "$types" | grep -qxF "$slug" || fail "$slug declares no file type or link in types.tsv"
+done
 count=0
 for slug in $(cut -f1 "$types" | sort -u); do
   desktop=$("$root/packaging/linux/package.sh" --desktop "$slug")

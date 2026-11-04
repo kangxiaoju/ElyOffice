@@ -8,10 +8,12 @@ use super::{committed, sh};
 use crate::{status::State, tree::Tree};
 
 /// Steps, lets the watcher's timer pass, and redraws until `done`.
+#[track_caller]
 pub(crate) fn settle(cx: &mut VisualTestContext, done: impl Fn(&App) -> bool) {
-    settle_within(cx, Duration::from_secs(10), done)
+    settle_within(cx, Duration::from_secs(60), done)
 }
 
+#[track_caller]
 pub(crate) fn settle_within(cx: &mut VisualTestContext, wait: Duration, done: impl Fn(&App) -> bool) {
     let deadline = Instant::now() + wait;
     while Instant::now() < deadline {
@@ -38,7 +40,7 @@ pub(crate) fn window<'a>(
     cx.update(ely_gpui_component::init_for_tests);
     cx.update(|cx| {
         ely_ui::settings::install_defaults(cx);
-        ely_ui::i18n::install(cx);
+        ely_ui::i18n::install_as("en-US", cx);
         // As tool_root does: menus before the window.
         let menus = crate::menu::menus(cx);
         let menus = ely_ui::commands::menus(ely_platform::AppId::Tree, &ely_ui::commands::OPENING, false, menus, cx);

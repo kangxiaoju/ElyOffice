@@ -7,10 +7,11 @@ use std::{
 };
 
 use ely_lok::{Doc, LokError, LokView, Reported, Worker, sheet::csv::Import};
+use ely_gpui_component::primitives::Severity;
 use ely_platform::AppId;
 use gpui::{App, Context, Entity, FocusHandle, Window};
 
-use crate::engine::{Engine, Load};
+use crate::engine::{Engine, Load, Stop};
 use crate::{Host, Tabs, text};
 
 /// The LOK engine.
@@ -21,6 +22,7 @@ pub struct Loaded {
     doc: Doc,
     laid: ely_lok::Layout,
     mark: String,
+    feed: ely_lok::Feed,
 }
 
 impl Engine for Lok {
@@ -38,7 +40,7 @@ impl Engine for Lok {
         // Layout and history too: the window never waits.
         let laid = ely_lok::layout(worker, &doc)?;
         let mark = worker.values(&doc, ".uno:Undo")?;
-        Ok(Loaded { doc, laid, mark })
+        Ok(Loaded { doc, laid, mark, feed: worker.feed() })
     }
 
     fn open(
@@ -47,8 +49,8 @@ impl Engine for Lok {
         _: &mut Window,
         cx: &mut App,
     ) -> io::Result<(Doc, Entity<LokView>, String)> {
-        let Loaded { doc, laid, mark } = loaded;
-        let view = LokView::open(Arc::clone(worker), doc.clone(), laid, cx);
+        let Loaded { doc, laid, mark, feed } = loaded;
+        let view = LokView::open(Arc::clone(worker), doc.clone(), laid, feed, cx);
         let (zoom, deck) = (ely_ui::settings::current(cx).doc_zoom, doc.is_deck());
         let kind = match (doc.is_sheet(), deck) {
             (true, _) => "office.view.sheet",
@@ -76,8 +78,12 @@ impl Engine for Lok {
         worker.values(doc, ".uno:Undo")
     }
 
-    fn write(worker: &mut Worker, doc: &Doc, path: &Path, format: &str) -> io::Result<()> {
-        doc.save_owned(worker, &ely_lok::file_url(path), format)
+    /// Only a save before a close enters a cell edit.
+    fn write(worker: &mut Worker, doc: &Doc, path: &Path, format: &str, closing: bool) -> io::Result<()> {
+        match closing {
+            true => doc.save_closing(worker, &ely_lok::file_url(path), format),
+            false => doc.save_owned(worker, &ely_lok::file_url(path), format),
+        }
     }
 
     fn snapshot(worker: &mut Worker, doc: &Doc, path: &Path, format: &str) -> io::Result<()> {
@@ -92,15 +98,24 @@ impl Engine for Lok {
         view.update(cx, |view, _| view.retire_all())
     }
 
+    fn hide(view: &Entity<LokView>, cx: &mut App) {
+        view.update(cx, |view, _| view.hide());
+    }
+
     fn ended(worker: &mut Worker) -> Option<String> {
         worker.ended()
     }
 
-    fn restart(app: AppId, worker: &mut Worker) -> io::Result<()> {
+    fn stopper(worker: &Worker) -> Option<Stop> {
+        let stopper = worker.stopper();
+        Some(Arc::new(move || stopper.stop()))
+    }
+
+    fn restart(_: AppId, worker: &mut Worker) -> io::Result<()> {
         let author = worker.author().map(str::to_string);
         let author = author.ok_or_else(|| io::Error::other("the ended worker had no author"))?;
         // The ended worker stays until the new one is ready.
-        let mut fresh = spawn(app)?;
+        let mut fresh = worker.relaunch()?;
         fresh.ready()?;
         fresh.set_author(&author)?;
         *worker = fresh;
@@ -137,6 +152,18 @@ impl Engine for Lok {
             false => failed(host, &error.0, cx),
         })
         .detach();
+        // Log the title only; the body may name user files.
+        cx.subscribe(view, |host, _, closed: &ely_lok::Closed, cx| {
+            log::warn!("{}: the engine opened a dialog Ely closed: {}", H::KIND.app.slug(), closed.title);
+            let title = closed.title.as_str();
+            let shown = match closed.body.as_str() {
+                "" => text(cx, "office.error.dialog", &[("title", title)]),
+                body => text(cx, "office.error.dialog_said", &[("title", title), ("body", body)]),
+            };
+            host.toast_unlogged(shown, Severity::Danger, cx);
+        })
+        .detach();
+        cx.subscribe(view, move |host, view, linked: &ely_lok::Linked, cx| follow(host, view, &linked.0, cx)).detach();
         // The status shows the zoom.
         cx.subscribe(view, |_, _, _: &ely_lok::Zoomed, cx| cx.notify()).detach();
         cx.subscribe(view, move |host, view, _: &Reported, cx| {
@@ -147,11 +174,29 @@ impl Engine for Lok {
     }
 }
 
-/// The worker and the scratch root of `app`.
-pub fn start(app: AppId, cx: &mut App) -> io::Result<(Arc<Mutex<Worker>>, PathBuf)> {
+/// Follows a link: a document place, or web and mail.
+fn follow<H: Host<Engine = Lok>>(host: &mut H, view: Entity<LokView>, link: &str, cx: &mut Context<H>) {
+    let slug = H::KIND.app.slug();
+    if let Some(mark) = link.strip_prefix('#') {
+        log::info!("{slug}: jumping to a place in the document");
+        if let Err(error) = view.update(cx, |view, _| view.run("link.jump", &[mark])) {
+            host.engine_failed(&error.to_string(), cx);
+        }
+    } else if crate::outward(link) {
+        log::info!("{slug}: opening a web or mail link");
+        cx.open_url(link);
+    } else {
+        host.toast(text(cx, "office.link.refused", &[]), Severity::Danger, cx);
+    }
+}
+
+/// The worker, its stop and the scratch root of `app`.
+pub fn start(app: AppId, cx: &mut App) -> io::Result<(Arc<Mutex<Worker>>, Option<Stop>, PathBuf)> {
     let data = ely_platform::data_dir(app).map_err(io::Error::other)?;
     let work = crate::fresh_work(&data)?;
-    let worker = Arc::new(Mutex::new(spawn(app)?));
+    let launched = spawn(app)?;
+    let stop = Lok::stopper(&launched);
+    let worker = Arc::new(Mutex::new(launched));
     // The window opens now; the kernel finishes starting behind it.
     let starting = Arc::clone(&worker);
     // Settings as read at launch; defaults if unreadable.
@@ -169,7 +214,7 @@ pub fn start(app: AppId, cx: &mut App) -> io::Result<(Arc<Mutex<Worker>>, PathBu
     })
     .detach();
     follow_author(&worker, wanted, cx);
-    Ok((worker, work))
+    Ok((worker, stop, work))
 }
 
 /// Sends the newest wanted name, read under the worker lock.
@@ -214,14 +259,14 @@ fn follow_author(worker: &Arc<Mutex<Worker>>, wanted: Arc<Mutex<String>>, cx: &m
 pub trait Commands: Host<Engine = Lok> {
     /// Runs a mapped command on the active tab.
     fn run_active(&mut self, id: &str, values: &[&str], cx: &mut Context<Self>) {
-        self.run_in(self.core().active, id, values, cx);
+        self.run_in(self.core().active(), id, values, cx);
     }
 
     /// Runs a mapped command on tab `tab`.
     fn run_in(&mut self, tab: Option<u64>, id: &str, values: &[&str], cx: &mut Context<Self>) {
         let Some(tab) = tab.and_then(|tab| self.tab(tab)) else {
             let text = text(cx, "command.blocked.no_document", &[]);
-            return self.toast(text, ely_gpui_component::primitives::Severity::Warning, cx);
+            return self.toast(text, Severity::Warning, cx);
         };
         log::info!("{}: runs {id}", Self::KIND.app.slug());
         // Numbers hold only in the state they were read.
@@ -262,8 +307,9 @@ impl<H: Host<Engine = Lok>> Commands for H {}
 
 /// A worker that shuts down when the test's thread ends.
 #[cfg(feature = "test-support")]
-pub fn test_worker(install: &Path, profile: &Path) -> Arc<Mutex<Worker>> {
+pub fn test_worker(install: &Path, profile: &Path) -> (Arc<Mutex<Worker>>, Option<Stop>) {
     let worker = Worker::spawn(install, profile).expect("the worker");
+    let stop = Lok::stopper(&worker);
     let worker = Arc::new(Mutex::new(worker));
     let ending = worker.clone();
     ely_ui::at_thread_end(move || match ending.lock() {
@@ -273,5 +319,5 @@ pub fn test_worker(install: &Path, profile: &Path) -> Arc<Mutex<Worker>> {
         },
         Err(_) => log::warn!("lok: a test panicked holding the worker"),
     });
-    worker
+    (worker, stop)
 }

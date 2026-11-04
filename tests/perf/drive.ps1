@@ -18,6 +18,9 @@ public static class Input {
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr window);
     [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
     [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")] public static extern uint Owner(IntPtr window, out uint pid);
+    [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
+    [DllImport("user32.dll")] public static extern IntPtr LoadKeyboardLayout(string id, uint flags);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr w, IntPtr l);
     // The foreground's input queue lets another take the front.
     public static bool Front(IntPtr window) {
         uint ours = GetCurrentThreadId(), theirs = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
@@ -36,24 +39,33 @@ public static class Input {
 [Input]::SetProcessDPIAware() | Out-Null
 $A = [System.Windows.Automation.AutomationElement]
 
+# A busy main thread answers UI Automation late.
 function Window {
     $owner = New-Object System.Windows.Automation.PropertyCondition($A::ProcessIdProperty, $Id)
-    $window = $A::RootElement.FindFirst('Children', $owner)
-    if (-not $window) { throw "no window for process $Id" }
+    $until = (Get-Date).AddSeconds(10)
+    while (-not ($window = $A::RootElement.FindFirst('Children', $owner))) {
+        if ((Get-Date) -gt $until) { throw "no window for process $Id in 10 s" }
+        Start-Sleep -Milliseconds 100
+    }
     $window
 }
+# Any of the app's windows: a dialog is its own.
 function Named([string]$name) {
+    $owner = New-Object System.Windows.Automation.PropertyCondition($A::ProcessIdProperty, $Id)
     $named = New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $name)
-    (Window).FindFirst('Descendants', $named)
+    foreach ($window in $A::RootElement.FindAll('Children', $owner)) {
+        $found = $window.FindFirst('Descendants', $named)
+        if ($found) { return $found }
+    }
 }
+function Mine { $pid0 = [uint32]0; [Input]::Owner([Input]::GetForegroundWindow(), [ref]$pid0) | Out-Null; $pid0 -eq $Id }
 # Input goes to the front window: it must be the app's.
 function Ours {
-    if (-not $script:handle) { $script:handle = [IntPtr](Window).Current.NativeWindowHandle }
-    $front = [Input]::GetForegroundWindow()
-    if ($front -eq $script:handle) { return }
+    if (Mine) { return }
+    $handle = [IntPtr](Window).Current.NativeWindowHandle
     # A console flashing up takes the front; take it back once.
-    for ($try = 0; $try -lt 5 -and -not [Input]::Front($script:handle); $try++) { Start-Sleep -Milliseconds 100 }
-    if ([Input]::GetForegroundWindow() -eq $script:handle) { [Console]::Error.WriteLine("drive: took the front back"); return }
+    for ($try = 0; $try -lt 5 -and -not [Input]::Front($handle); $try++) { Start-Sleep -Milliseconds 100 }
+    if (Mine) { [Console]::Error.WriteLine("drive: took the front back"); return }
     throw "process $Id lost the front to $(Holder); no input sent"
 }
 # The process owning the front window, by name and id.
@@ -62,14 +74,33 @@ function Holder {
     [Input]::Owner([Input]::GetForegroundWindow(), [ref]$pid0) | Out-Null
     "$((Get-Process -Id $pid0 -ErrorAction SilentlyContinue).ProcessName) ($pid0)"
 }
+# An input method would compose the keys; use US English.
+function Plain {
+    $window = [Input]::GetForegroundWindow()
+    $thread = [Input]::GetWindowThreadProcessId($window, [IntPtr]::Zero)
+    $us = [Input]::LoadKeyboardLayout('00000409', 1)
+    if ([Input]::GetKeyboardLayout($thread) -eq $us) { return }
+    # WM_INPUTLANGCHANGEREQUEST
+    [Input]::PostMessage($window, 0x50, [IntPtr]::Zero, $us) | Out-Null
+    for ($try = 0; $try -lt 40; $try++) {
+        Start-Sleep -Milliseconds 50
+        if ([Input]::GetKeyboardLayout($thread) -eq $us) { [Console]::Error.WriteLine("drive: switched process $Id to US English"); return }
+    }
+    throw "process $Id keeps input method $('{0:x}' -f [Input]::GetKeyboardLayout($thread).ToInt64()); no input sent"
+}
+# When the last input left, for bench.py to time from.
+function Sent { $script:sent = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
 # SendKeys' journal hook drops keys on Windows 11.
 function Key([byte]$vk, [bool]$up) {
-    if (-not $up) { Ours }
-    [Input]::keybd_event($vk, 0, $(if ($up) { 2 } else { 0 }), [UIntPtr]::Zero)
+    if (-not $up) { Ours; Plain; Sent }
+    # Page and arrow keys are extended keys.
+    $flags = $(if ($up) { 2 } else { 0 }) -bor $(if ($vk -ge 0x21 -and $vk -le 0x28) { 1 } else { 0 })
+    [Input]::keybd_event($vk, 0, $flags, [UIntPtr]::Zero)
 }
 function Tap([byte]$vk) { Key $vk $false; Key $vk $true }
 function ClickAt([int]$x, [int]$y) {
     [Input]::SetCursorPos($x, $y) | Out-Null
+    Sent
     [Input]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
     [Input]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
 }
@@ -104,23 +135,98 @@ switch ($Command) {
         }
     }
     'enter' { Tap 0x0D }
+    'key' { Tap (@{ pagedown = 0x22; tab = 0x09; escape = 0x1B })[$Arg] }
+    'tab' {
+        # A real press on the strip's tab, never Invoke.
+        $item = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
+        $named = New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $Arg)
+        $element = (Window).FindFirst('Descendants', (New-Object System.Windows.Automation.AndCondition($item, $named)))
+        if (-not $element) { throw "no tab named $Arg" }
+        Click $element
+    }
     'chord' {
+        # powershell -File reads a leading '-' as a parameter.
+        $named = @{ 'plus' = 0xBB; 'minus' = 0xBD; 'tab' = 0x09; 'home' = 0x24 }
         Key 0x11 $false
-        Tap ([byte][char]$Arg.ToUpper())
+        Tap ([byte]$(if ($named.ContainsKey($Arg)) { $named[$Arg] } else { [char]$Arg.ToUpper() }))
         Key 0x11 $true
+    }
+    'rect' {
+        $r = (Window).Current.BoundingRectangle
+        "$([int]$r.X),$([int]$r.Y),$([int]$r.Width),$([int]$r.Height)"
+    }
+    'park' {
+        # A pointer resting on the window feeds it moves.
+        $r = (Window).Current.BoundingRectangle
+        $x = $(if ($r.X -gt 20) { $r.X - 10 } else { $r.X + $r.Width + 10 })
+        [Input]::SetCursorPos([int]$x, [int]($r.Y + $r.Height / 2)) | Out-Null
+    }
+    'middle' {
+        Ours
+        $r = (Window).Current.BoundingRectangle
+        ClickAt ([int]($r.X + $r.Width / 2)) ([int]($r.Y + $r.Height / 2))
+    }
+    'wheel' {
+        # Ctrl and the wheel: n<notches>, at the middle or @x,y.
+        $notches, $at = $Arg.TrimStart('n').Split('@')
+        $r = (Window).Current.BoundingRectangle
+        if ($at) { $x, $y = $at.Split(',') } else { $x, $y = ($r.X + $r.Width / 2), ($r.Y + $r.Height / 2) }
+        [Input]::SetCursorPos([int]$x, [int]$y) | Out-Null
+        Key 0x11 $false
+        $delta = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int32]([int]$notches * 120)), 0)
+        [Input]::mouse_event(0x0800, 0, 0, $delta, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 50
+        Key 0x11 $true
+    }
+    'shot' {
+        Add-Type -AssemblyName System.Drawing
+        $r = (Window).Current.BoundingRectangle
+        $image = New-Object System.Drawing.Bitmap([int]$r.Width, [int]$r.Height)
+        $drawn = [System.Drawing.Graphics]::FromImage($image)
+        $drawn.CopyFromScreen([int]$r.X, [int]$r.Y, 0, 0, $image.Size)
+        $image.Save($Arg, [System.Drawing.Imaging.ImageFormat]::Png)
+        $drawn.Dispose(); $image.Dispose()
     }
     'press' {
         $element = Named $Arg
         if (-not $element) { throw "no control named $Arg" }
         $invoke = $null
-        if ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) { $invoke.Invoke() } else { Click $element }
+        if ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) { Sent; $invoke.Invoke() } else { Click $element }
     }
     'shows' { if (Named $Arg) { 'yes' } else { 'no' } }
+    'click' {
+        # A real click on the button, not its same-named tooltip.
+        $button = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+        $named = New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $Arg)
+        $element = (Window).FindFirst('Descendants', (New-Object System.Windows.Automation.AndCondition($button, $named)))
+        if (-not $element) { throw "no button named $Arg" }
+        Click $element
+    }
+    'named' {
+        # Each element whose name matches $Arg: name|x,y,w,h.
+        foreach ($element in (Window).FindAll('Descendants', [System.Windows.Automation.Condition]::TrueCondition)) {
+            $name = $element.Current.Name
+            if ($name -match $Arg) {
+                $r = $element.Current.BoundingRectangle
+                "$name|$([int]$r.X),$([int]$r.Y),$([int]$r.Width),$([int]$r.Height)"
+            }
+        }
+    }
     'field' {
         $edit = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)
-        $field = (Window).FindFirst('Descendants', $edit)
-        if (-not $field) { throw 'no text field' }
+        $until = (Get-Date).AddSeconds(10)
+        while (-not ($field = (Window).FindFirst('Descendants', $edit))) {
+            if ((Get-Date) -gt $until) { throw "no text field in process $Id in 10 s" }
+            Start-Sleep -Milliseconds 100
+        }
         Click $field
+    }
+    'values' {
+        $edit = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)
+        foreach ($field in (Window).FindAll('Descendants', $edit)) {
+            $value = $null
+            if ($field.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$value)) { "value $($value.Current.Value)" }
+        }
     }
     'machine' {
         $cpu = (Get-CimInstance Win32_Processor | Select-Object -First 1)
@@ -131,3 +237,4 @@ switch ($Command) {
     }
     default { throw "unknown command $Command" }
 }
+if ($script:sent) { "sent $($script:sent)" }

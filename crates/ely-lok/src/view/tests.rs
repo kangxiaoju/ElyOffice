@@ -1,6 +1,7 @@
 use super::*;
 
 mod borders;
+mod busy;
 mod clip;
 mod commands;
 mod edge;
@@ -9,6 +10,7 @@ mod formula;
 mod input;
 mod large;
 mod read_only;
+mod reveal;
 mod show_borders;
 mod theme;
 mod text;
@@ -60,10 +62,11 @@ pub(super) fn live_view_of(
         .load(&crate::file_url(&source))
         .expect("the document loads");
     std::mem::forget(dir);
+    let feed = worker.feed();
     let shared = Arc::new(Mutex::new(worker));
     let laid = super::layout(&mut shared.lock().expect("the worker lock"), &doc)
         .expect("the layout reads");
-    let view = LokView::open(Arc::clone(&shared), doc, laid, app);
+    let view = LokView::open(Arc::clone(&shared), doc, laid, feed, app);
     (view, shared)
 }
 
@@ -119,12 +122,10 @@ fn releasing_the_view_stops_the_watch() {
     drop(shared);
     cx.update(|_| drop(view));
     let mut released = false;
-    for _ in 0..20 {
+    let deadline = std::time::Instant::now() + crate::client::tests::HANG;
+    while !released && std::time::Instant::now() < deadline {
         cx.executor().tick();
         released = weak.upgrade().is_none();
-        if released {
-            break;
-        }
     }
     assert!(released, "the idle watch releases the worker");
 }
@@ -149,9 +150,10 @@ fn tiles_paint_in_logical_pixels_at_2x() {
                 };
                 view.finish_tile(key, view.geom, Ok(tile), cx);
             }
+            // Two tiles fill this screen, so it shows.
             let bounds = Bounds {
                 origin: point(px(10.0), px(20.0)),
-                size: size(px(800.0), px(600.0)),
+                size: size(px(511.0), px(255.0)),
             };
             let ready = view.prepare(bounds).tiles;
             let rects: Vec<_> = ready.iter().map(|(rect, ..)| *rect).collect();
@@ -248,6 +250,12 @@ fn the_view_clamps_scroll_and_guards_generations() {
                 "a rect batch outdates intersecting tiles"
             );
             view.finish_tile((0, 0), geom, painted(6), cx);
+            let bounds = Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: size(px(255.0), px(255.0)),
+            };
+            let whole = view.prepare(bounds).tiles.len();
+            assert_eq!(whole, 1, "one tile fills this screen");
             view.finish_tile((3, 3), geom, painted(6), cx);
             view.apply_batch(
                 crate::Events {
@@ -264,12 +272,8 @@ fn the_view_clamps_scroll_and_guards_generations() {
                 view.tiles[&(0, 0)].stale,
                 "the dirty tile waits for its repaint"
             );
-            let bounds = Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: size(px(800.0), px(600.0)),
-            };
             let painted = view.prepare(bounds);
-            assert!(!painted.tiles.is_empty(), "stale tiles still paint");
+            assert_eq!(painted.tiles.len(), whole, "the stale screen still paints");
             assert!(
                 view.fetching.contains(&(0, 0)),
                 "and their repaint is asked"
@@ -417,7 +421,10 @@ fn zooming_keeps_the_pointed_spot_and_walks_the_steps() {
             let after = spot(view);
             assert!((before.0 - after.0).abs() <= 1 && (before.1 - after.1).abs() <= 1, "{before:?} {after:?}");
             assert!(!view.fitting(), "a chosen zoom ends fitting");
+            let middle = |view: &LokView| view.scroll.1 + view.geom.twips_of(300.0);
+            let before = middle(view);
             view.set_zoom(1.0, cx);
+            assert!((middle(view) - before).abs() <= 1, "a page keeps its middle");
             view.zoom_step(true, cx);
             assert_eq!(view.zoom(), 1.25);
             view.zoom_step(false, cx);

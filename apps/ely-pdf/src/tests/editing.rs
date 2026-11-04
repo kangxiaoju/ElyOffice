@@ -132,6 +132,47 @@ fn new_text_lands_where_pressed_and_objects_delete() {
 }
 
 #[test]
+fn a_text_block_drags_to_a_new_place_in_one_step() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let (_, cx, view) = editing(&mut cx, dir.path());
+    let hello = |cx: &mut VisualTestContext| {
+        cx.update(|_, app| view.read(app).layers[&0].blocks.iter().find(|b| b.text.starts_with("Hello")).map(|b| b.rect))
+    };
+    let was = hello(cx).expect("hello");
+    let (from, to) = (over(cx, &view, 0, (80.0, 66.0)), over(cx, &view, 0, (120.0, 166.0)));
+    cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(to, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
+    blocks(cx, &view);
+    let now = hello(cx).expect("hello, moved");
+    assert!((now[0] - was[0] - 40.0).abs() < 0.5 && (now[1] - was[1] - 100.0).abs() < 0.5, "{now:?} from {was:?}");
+    assert_eq!(cx.update(|_, app| view.read(app).edited), 1, "one edit");
+    // A press with no drag only aims.
+    click(cx, &view, (120.0, 166.0));
+    assert_eq!(cx.update(|_, app| view.read(app).edited), 1);
+}
+
+#[test]
+fn delete_removes_the_aimed_object_and_nothing_else() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let (_, cx, view) = editing(&mut cx, dir.path());
+    cx.update(|window, app| {
+        let focus = view.read(app).focus.clone();
+        window.focus(&focus, app)
+    });
+    click(cx, &view, (80.0, 66.0));
+    cx.simulate_keystrokes("delete");
+    assert_eq!(cx.update(|_, app| view.read(app).edited), 0, "text is not an object");
+    click(cx, &view, (310.0, 370.0));
+    assert!(matches!(cx.update(|_, app| view.read(app).aim), Some(Aim::Object { index: 0, .. })), "the stamp");
+    cx.simulate_keystrokes("delete");
+    assert!(!blocks(cx, &view).iter().any(|b| b == "STAMP"), "the stamp is gone");
+    assert!(blocks(cx, &view).iter().any(|b| b.starts_with("Hello")), "the text stays");
+}
+
+#[test]
 fn escape_leaves_the_edit_tool() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let mut cx = TestAppContext::single();
@@ -170,7 +211,7 @@ fn a_layer_read_from_before_an_edit_is_read_again() {
     let (_, cx, view) = editing(&mut cx, dir.path());
     // The read starts before the edit lands, returns after.
     cx.update(|_, app| view.update(app, |view, cx| {
-        view.edit("turning", |worker, doc| worker.rotate_pages(doc, &[0], 90), cx);
+        view.edit("pdf.doing.turn", |worker, doc| worker.rotate_pages(doc, &[0], 90), cx);
         view.layers.clear();
         view.ask_layers(&[0], cx);
         assert!(view.reading_layer);
@@ -219,7 +260,7 @@ fn a_preview_goes_once_anything_else_lands() {
         let preview = viewer.read(app).preview.as_ref().expect("shown");
         ((preview.tab, preview.version, preview.page), preview.writing.clone())
     });
-    cx.update(|_, app| view.update(app, |view, cx| view.edit("deleting", |worker, doc| worker.delete_pages(doc, &[0]), cx)));
+    cx.update(|_, app| view.update(app, |view, cx| view.edit("pdf.doing.delete_pages", |worker, doc| worker.delete_pages(doc, &[0]), cx)));
     settle(cx, |app| view.read(app).edited == 1 && viewer.read(app).preview.is_none());
     cx.update(|_, app| viewer.update(app, |viewer, cx| viewer.commit_text(stale.0, stale.1, cx)));
     frames(cx);
@@ -298,7 +339,8 @@ fn an_open_panel_stays_open_through_a_second_drag() {
     click(cx, &view, (122.0, 267.0));
     // The panel slides open; wait until the view stops narrowing.
     let mut narrow = wide;
-    for _ in 0..40 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while std::time::Instant::now() < deadline {
         cx.executor().advance_clock(std::time::Duration::from_millis(50));
         frames(cx);
         let now = cx.update(|_, app| view.read(app).room.size.width);

@@ -1,8 +1,10 @@
+#[cfg(not(target_os = "macos"))]
 use std::{cell::Cell, rc::Rc};
 
 use ely_platform::AppId;
 use gpui::{AnyWindowHandle, AppContext as _, Context, IntoElement, Render, TestAppContext, Window};
 
+#[cfg(not(target_os = "macos"))]
 const PNG: &[u8] = include_bytes!("../../../../assets/icons/ely-mail.png");
 /// Unshipped: its saved window place is no one's.
 const APP: AppId = AppId::Agent;
@@ -25,7 +27,7 @@ fn installed(cx: &mut TestAppContext) {
         ely_gpui_component::init_for_tests(cx);
         crate::settings::install_defaults(cx);
         crate::theme::install(cx);
-        crate::i18n::install(cx);
+        crate::i18n::install_as("en-US", cx);
     });
 }
 
@@ -42,6 +44,7 @@ fn close(window: AnyWindowHandle, cx: &mut TestAppContext) {
     cx.run_until_parked();
 }
 
+#[cfg(not(target_os = "macos"))]
 fn keep(reopened: Rc<Cell<usize>>, cx: &mut TestAppContext) -> anyhow::Result<()> {
     cx.update(|cx| {
         super::keep(APP, PNG, "envelope", move |window, cx| {
@@ -61,11 +64,13 @@ fn an_unkept_app_quits_with_its_window(cx: &mut TestAppContext) {
     assert_eq!(cx.quit_requests(), usize::from(cfg!(not(target_os = "macos"))));
 }
 
+// AppKit's status item needs the main thread.
+#[cfg(not(target_os = "macos"))]
 #[gpui::test]
 fn a_kept_app_closes_to_the_tray_and_opens_again(cx: &mut TestAppContext) {
     installed(cx);
     let Some(_host) = host::serve() else {
-        return eprintln!("SKIP: no dbus-daemon");
+        return eprintln!("SKIP: no tray host");
     };
     let first = open(cx);
     let reopened = Rc::new(Cell::new(0));
@@ -103,10 +108,13 @@ fn without_a_tray_host_closing_quits(cx: &mut TestAppContext) {
 #[cfg(target_os = "linux")]
 mod host;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
 mod host {
-    /// Windows and macOS need no host.
+    /// The taskbar's notification area; desktopless logons lack it.
     pub fn serve() -> Option<()> {
-        Some(())
+        use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
+        let class: Vec<u16> = "Shell_TrayWnd\0".encode_utf16().collect();
+        let tray = unsafe { FindWindowW(class.as_ptr(), std::ptr::null()) };
+        (!tray.is_null()).then_some(())
     }
 }

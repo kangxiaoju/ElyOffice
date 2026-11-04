@@ -17,15 +17,13 @@ impl Git {
     pub fn find() -> io::Result<Self> {
         let (path, bundled) = ely_platform::git::locate()?;
         if !path.is_file() {
-            let hint = if bundled {
-                "run scripts/build-git.sh"
-            } else {
-                "check ELY_GIT or the Git setting"
-            };
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("no Git at {} ({hint})", path.display()),
-            ));
+            let shown = path.display().to_string();
+            // A build step, for developers only.
+            if bundled {
+                let said = format!("no Git at {shown} (run scripts/build-git.sh)");
+                return Err(io::Error::new(io::ErrorKind::NotFound, said));
+            }
+            return Err(ely_ipc::Worded::error(io::ErrorKind::NotFound, "tree.error.git_gone", &[("path", &shown)]));
         }
         let version = match bundled {
             true => bundled_version(&path)?,
@@ -61,9 +59,14 @@ impl Git {
         // Writing apart from reading cannot fill both pipes.
         let writer = std::thread::spawn(move || stdin.write_all(&input));
         let output = child.wait_with_output()?;
-        writer
+        let written = writer
             .join()
-            .map_err(|_| io::Error::other("the stdin writer panicked"))??;
+            .map_err(|_| io::Error::other("the stdin writer panicked"))?;
+        // Git that quits unread breaks the pipe; its words matter.
+        if !output.status.success() {
+            return checked(args, output);
+        }
+        written?;
         checked(args, output)
     }
 

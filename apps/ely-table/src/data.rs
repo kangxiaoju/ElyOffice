@@ -206,7 +206,7 @@ impl Book {
     }
 
     pub(crate) fn ask_data(&mut self, asked: Asked, cx: &mut Context<Self>) {
-        let Some(id) = self.core.active else {
+        let Some(id) = self.core.active() else {
             return self.warn_key("command.blocked.no_document", cx);
         };
         self.data_in(id, asked, cx);
@@ -294,7 +294,7 @@ impl Book {
 
     /// Splits one column of text by the chosen separators.
     pub(crate) fn ask_columns(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.core.active else {
+        let Some(id) = self.core.active() else {
             return self.warn_key("command.blocked.no_document", cx);
         };
         self.columns_in(id, cx);
@@ -345,7 +345,7 @@ impl Book {
     }
 
     fn paste_only(&mut self, id: &'static str, cx: &mut Context<Self>) {
-        let Some(tab) = self.core.active else {
+        let Some(tab) = self.core.active() else {
             return self.warn_key("command.blocked.no_document", cx);
         };
         self.paste_only_in(tab, id, cx);
@@ -386,8 +386,9 @@ impl Book {
                 let json = worker.values(doc, &sheet::cell_query(sheet::FILTER, column, row))?;
                 sheet::filter_values(&json)
             },
-            move |book, read, _, cx| match read {
+            move |book, read, window, cx| match read {
                 Ok(filter) => {
+                    let search = dialogs::search_field(window, cx);
                     let picked = filter
                         .entries
                         .iter()
@@ -400,6 +401,7 @@ impl Book {
                         row,
                         entries: filter.entries,
                         picked,
+                        search,
                     });
                     cx.notify();
                 }
@@ -417,6 +419,7 @@ impl Book {
             row,
             entries,
             picked,
+            ..
         }) = self.dialog.take()
         else {
             return;

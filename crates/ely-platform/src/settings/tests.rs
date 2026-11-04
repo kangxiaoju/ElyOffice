@@ -63,17 +63,34 @@ fn shared_fields_type_strictly_and_default_when_absent() {
     let fields = |text: &str| serde_json::from_str::<serde_json::Map<_, _>>(text).unwrap();
     assert_eq!(Shared::from_fields(&fields("{}")).unwrap(), Shared::default());
     let read = Shared::from_fields(&fields(
-        r#"{"appearance":"dark","language":"zh-CN","motion":"reduce","omarchy_sync":false,"author":" Ana ","check_updates":true}"#,
+        r#"{"appearance":"dark","language":"zh-CN","motion":"reduce","omarchy_sync":false,"author":" Ana ","check_updates":true,"always_scrollbars":true}"#,
     ))
     .unwrap();
     assert!(read.check_updates && !Shared::default().check_updates, "asked for, never by default");
+    assert!(read.always_scrollbars && !Shared::default().always_scrollbars, "chosen, fading by default");
     assert_eq!(
         (read.appearance, read.language, read.motion, read.omarchy_sync, read.author.as_str()),
-        (Appearance::Dark, Language::Chinese, Motion::Reduced, false, "Ana")
+        (Appearance::Dark, Language::Listed("zh-CN"), Motion::Reduced, false, "Ana")
     );
-    for bad in [r#"{"appearance":"blue"}"#, r#"{"omarchy_sync":"yes"}"#, r#"{"author":3}"#, r#"{"check_updates":1}"#] {
+    for bad in [r#"{"appearance":"blue"}"#, r#"{"omarchy_sync":"yes"}"#, r#"{"author":3}"#, r#"{"check_updates":1}"#, r#"{"always_scrollbars":"on"}"#] {
         assert!(Shared::from_fields(&fields(bad)).is_err(), "{bad}");
     }
+}
+
+#[test]
+fn the_language_is_system_or_a_listed_tag() {
+    use super::{LANGUAGES, Language, Shared};
+    let read = |word: &str| Shared::from_fields(&serde_json::from_str(&format!(r#"{{"language":"{word}"}}"#)).unwrap()).map(|shared| shared.language);
+    assert_eq!(read("system").unwrap(), Language::System);
+    assert_eq!(Language::System.word(), "system");
+    for (tag, _) in LANGUAGES {
+        assert_eq!(read(tag).unwrap(), Language::Listed(tag));
+        assert_eq!(Language::Listed(tag).word(), tag);
+    }
+    for bad in ["en", "zh", "zh-cn", "x-unlisted", ""] {
+        assert!(read(bad).is_err(), "{bad}");
+    }
+    assert!(Shared::from_fields(&serde_json::from_str(r#"{"language":1}"#).unwrap()).is_err());
 }
 
 #[test]
@@ -136,4 +153,18 @@ fn a_write_overtaken_while_waiting_leaves_the_file() {
     drop(held);
     assert!(!waiting.join().unwrap(), "the overtaken write is skipped");
     assert_eq!(store.read().unwrap()["author"], "Ana");
+}
+
+#[test]
+fn new_paper_follows_the_region_unless_chosen() {
+    use super::{Paper, Shared, word};
+    let fields = |text: &str| serde_json::from_str::<serde_json::Map<_, _>>(text).unwrap();
+    assert_eq!(Shared::default().paper, Paper::Region);
+    for (paper, stored) in Paper::ALL {
+        assert_eq!(Shared::from_fields(&fields(&format!(r#"{{"paper":"{stored}"}}"#))).unwrap().paper, paper);
+        assert_eq!(word(&Paper::ALL, &paper), stored);
+    }
+    for bad in [r#"{"paper":"A4"}"#, r#"{"paper":"a3"}"#, r#"{"paper":4}"#] {
+        assert!(Shared::from_fields(&fields(bad)).is_err(), "{bad}");
+    }
 }

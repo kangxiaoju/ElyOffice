@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use ely_gpui_component::{feedback::EmptyState, primitives::IconName, shell::StatusBar};
+use ely_gpui_component::{primitives::IconName, shell::StatusBar};
 use ely_lok::{
     LokView, Worker,
     show::Design,
@@ -24,6 +24,9 @@ use crate::design::Panel;
 use crate::slides::Strip;
 
 pub use crate::extra::Extra;
+
+/// Menu checks: grid, guides, comments; undo, redo.
+pub type Snapped = ((bool, bool, bool), (bool, bool));
 
 pub struct Deck {
     pub core: Core<Deck>,
@@ -56,7 +59,7 @@ pub struct Deck {
     pub active_remark: Option<SharedString>,
     pub remarks_pane: Entity<crate::remarks::Pane>,
     /// What the menus last showed: grid, guides, comments; undo, redo.
-    pub snap_menus: Option<((bool, bool, bool), (bool, bool))>,
+    pub snap_menus: Option<Snapped>,
     /// The canvas's right-click menu.
     pub menu: Option<ely_ui::menu::Offer<crate::menu::What>>,
     /// Pictures of closed tabs and ended previews, freed later.
@@ -86,6 +89,13 @@ impl Host for Deck {
         self.sync_menus(cx);
     }
 
+    fn tab_shown(&mut self, id: u64, cx: &mut Context<Self>) {
+        if let Some(view) = self.tab(id).map(|tab| tab.view.clone()) {
+            self.reread(id, &view, cx);
+        }
+        self.paint_next(id, cx);
+    }
+
     fn read_at(&self, tab: u64, _: &gpui::App) -> Option<ely_lok::Doc> {
         self.tab(tab).and_then(|tab| tab.extra.read_at.clone())
     }
@@ -102,7 +112,7 @@ impl Host for Deck {
         self.offer_menu(id, view, cx);
         self.reread(id, view, cx);
         // Undo's state can change with no new read.
-        if self.core.active == Some(id) {
+        if self.core.active() == Some(id) {
             self.sync_menus(cx);
         }
     }
@@ -118,12 +128,12 @@ pub fn menus(on: (bool, bool, bool), undo: (bool, bool), cx: &App) -> Vec<gpui::
 /// The window root with a blank deck.
 pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
     ely_lok::init(cx);
-    let (worker, work) = match ely_office::start(app, cx) {
+    let (worker, stop, work) = match ely_office::start(app, cx) {
         Ok(started) => started,
         Err(error) => ely_platform::startup::fail(app, &format!("{error}")),
     };
     let deck = cx.new(|cx| {
-        let mut host = Deck::new(worker, work, cx);
+        let mut host = Deck::new(worker, stop, work, cx);
         // Recovery points, crash return, autosave (§6.2, §6.3).
         ely_office::Recovering::start_recovery(&mut host, cx);
         <Deck as ely_office::Autosaving>::start_autosave(cx);
@@ -158,7 +168,7 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
 }
 
 impl Deck {
-    pub fn new(worker: Arc<Mutex<Worker>>, work: PathBuf, cx: &mut Context<Self>) -> Self {
+    pub fn new(worker: Arc<Mutex<Worker>>, stop: Option<ely_office::Stop>, work: PathBuf, cx: &mut Context<Self>) -> Self {
         let deck = cx.weak_entity();
         // Closing or switching tabs stops playback.
         cx.observe_self(|deck, _| {
@@ -167,7 +177,7 @@ impl Deck {
         })
         .detach();
         Deck {
-            core: Core::new(worker, work, cx),
+            core: Core::new(worker, stop, work, cx),
             dialog: None,
             strip: cx.new(|cx| Strip::new(deck.clone(), cx)),
             panel: cx.new(|cx| Panel::new(deck.clone(), cx)),
@@ -207,6 +217,10 @@ impl Deck {
             read.caret(),
             read.graphic(),
         );
+        // Hidden decks read when shown; Replace All reports parts too.
+        if self.core.active() != Some(id) {
+            return;
+        }
         let Some(tab) = self.tab_mut(id) else {
             return;
         };
@@ -400,11 +414,7 @@ impl Deck {
 
     pub(crate) fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(tab) = self.active_tab() else {
-            let title = match self.core.loading.first() {
-                Some((_, name)) => Self::text(cx, "office.loading", &[("name", name)]),
-                None => Self::text(cx, "command.blocked.no_document", &[]),
-            };
-            return EmptyState::new("show-empty", IconName::Monitor, title).into_any_element();
+            return self.empty_body("show-empty", IconName::Monitor, cx);
         };
         let view = tab.view.clone();
         let guides = self.guide_layer(&view, cx);

@@ -51,7 +51,7 @@ fn now(read: &Properties, key: &str) -> Option<String> {
 
 impl Viewer {
     pub fn ask_properties(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(tab) = self.core.active else {
+        let Some(tab) = self.core.active() else {
             return self.no_document(cx);
         };
         self.read_in(
@@ -91,7 +91,7 @@ impl Viewer {
         };
         view.update(cx, |view, cx| {
             view.edit(
-                "setting properties",
+                "pdf.doing.properties",
                 move |worker, doc| {
                     let pairs: Vec<(&str, &str)> = changed.iter().map(|(key, value)| (*key, value.as_str())).collect();
                     worker.set_properties(doc, &pairs)

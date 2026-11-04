@@ -5,7 +5,7 @@ use crate::Doc;
 
 #[test]
 fn read_only_rejects_edits_before_the_queue() {
-    assert!(Input::Text { commit: true, text: "x".into() }.edits());
+    assert!(Input::Text { ends: true, text: "x".into() }.edits());
     assert!(Input::Paste.edits());
     assert!(Input::Copy { cut: true }.edits());
     assert!(Input::Drag { from: (0, 0), to: (1, 1) }.edits());
@@ -13,7 +13,7 @@ fn read_only_rejects_edits_before_the_queue() {
     assert!(!Input::Key { char_code: 0, key_code: 1027 }.edits());
     assert!(!Input::Copy { cut: false }.edits());
     assert!(!Input::Part(1).edits());
-    assert!(!accepts(true, &Input::Text { commit: true, text: "x".into() }));
+    assert!(!accepts(true, &Input::Text { ends: true, text: "x".into() }));
     assert!(!accepts(true, &Input::Paste));
     assert!(!accepts(true, &Input::Copy { cut: true }));
     assert!(accepts(true, &Input::Copy { cut: false }));
@@ -54,11 +54,12 @@ fn two_views(
     std::fs::write(&source, crate::client::tests::FODT).expect("the fixture writes");
     let doc = worker.load(&crate::file_url(&source)).expect("the document loads");
     std::mem::forget(dir);
+    let feed = worker.feed();
     let shared = Arc::new(Mutex::new(worker));
     let laid =
         crate::layout(&mut shared.lock().expect("the worker lock"), &doc).expect("the layout reads");
-    let editable = crate::LokView::open(Arc::clone(&shared), doc.clone(), laid.clone(), app);
-    let read_only = crate::LokView::open(Arc::clone(&shared), doc.clone(), laid, app);
+    let editable = crate::LokView::open(Arc::clone(&shared), doc.clone(), laid.clone(), feed.clone(), app);
+    let read_only = crate::LokView::open(Arc::clone(&shared), doc.clone(), laid, feed, app);
     (editable, read_only, shared, doc)
 }
 
@@ -84,7 +85,7 @@ fn read_only_view_rejects_every_edit_before_it_reaches_the_worker() {
 
         // Every editing input is refused at the gate, before the worker.
         read_only.update(app, |view, _| {
-            view.send(Input::Text { commit: true, text: "blocked".into() });
+            view.send(Input::Text { ends: true, text: "blocked".into() });
             view.send(Input::Paste);
             view.send(Input::Copy { cut: true });
             view.send(Input::Drag { from: (0, 0), to: (1, 1) });
@@ -95,7 +96,7 @@ fn read_only_view_rejects_every_edit_before_it_reaches_the_worker() {
 
         // The same kind of edit reaches the worker through the editable view.
         editable.update(app, |view, _| {
-            view.send(Input::Text { commit: true, text: "hello".into() });
+            view.send(Input::Text { ends: true, text: "hello".into() });
         });
         assert!(
             settle(&cx, |_| revision(&shared) > before),
