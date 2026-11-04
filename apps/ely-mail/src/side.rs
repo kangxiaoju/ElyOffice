@@ -1,12 +1,10 @@
 //! Every inbox, then each account's folders, down the left.
 
 use ely_gpui_component::{
-    buttons::{Button, ButtonVariant, IconButton},
     layout::ScrollArea,
     mail::{Mailbox, MailboxList},
-    menus::{ContextMenu, Menu, MenuItem},
+    menus::{ContextMenu, Menu, MenuItem, OverflowMenu},
     primitives::IconName,
-    theme::ControlSize,
 };
 use ely_mail_engine::{AccountId, LocalFolder, MailboxId, Role};
 use gpui::{
@@ -19,7 +17,6 @@ use ely_ui::menu::Offer;
 use crate::{
     boxes::Open,
     mail::{Mail, text},
-    menu,
 };
 
 /// The folder a menu was asked for.
@@ -175,12 +172,37 @@ impl Render for Side {
             .iter()
             .filter(|(id, _)| mail.folded.contains(id));
         let folded: Vec<String> = folded.map(|(_, account)| account.address.clone()).collect();
-        let mut list = MailboxList::new("mail-boxes").fixed_section(
-            text(cx, "mail.boxes.unified", &[]),
-            [inboxes, drafts, outbox, contacts]
-                .into_iter()
-                .chain(pinned),
-        );
+        let (adding, writing) = (self.mail.clone(), self.mail.clone());
+        let actions = Menu::new()
+            .item(
+                MenuItem::new(text(cx, "mail.add.open", &[]))
+                    .icon(IconName::Plus)
+                    .on_click(move |window, cx| {
+                        adding.update(cx, |mail, cx| mail.start_adding(window, cx)).ok();
+                    }),
+            )
+            .item(
+                MenuItem::new(text(cx, "mail.write.new", &[]))
+                    .icon(IconName::Pencil)
+                    .on_click(move |_, cx| {
+                        writing.update(cx, |mail, cx| mail.write_new(cx)).ok();
+                    }),
+            );
+        let actions = OverflowMenu::new("mail-box-actions", actions)
+            .icon(IconName::Plus)
+            .tooltip(text(cx, "mail.boxes.actions", &[]));
+        let mut list = MailboxList::new("mail-boxes")
+            .fixed_section(
+                text(cx, "mail.boxes.unified", &[]),
+                [inboxes, drafts, outbox, contacts]
+                    .into_iter()
+                    .chain(pinned),
+            )
+            .section_action(
+                div()
+                    .debug_selector(|| "mail-box-actions".into())
+                    .child(actions),
+            );
         for (address, boxes) in accounts {
             list = list.section(address, boxes);
         }
@@ -203,41 +225,10 @@ impl Render for Side {
             .on_menu(move |key, at, _, cx| {
                 side.update(cx, |side, cx| side.ask(key, at, cx)).ok();
             });
-        let write = Button::new("mail-write-new", text(cx, "mail.write.new", &[]))
-            .variant(ButtonVariant::Primary)
-            .size(ControlSize::Sm)
-            .icon(IconName::Pencil)
-            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::NewMessage), cx));
-        let add = IconButton::new("mail-add-account", IconName::Plus)
-            .variant(ButtonVariant::Ghost)
-            .size(ControlSize::Sm)
-            .tooltip(text(cx, "mail.add.open", &[]))
-            .on_click(|_, window, cx| window.dispatch_action(Box::new(menu::AddAccount), cx));
         let scroll = ScrollArea::new("mail-side-scroll")
             .vertical()
             .size_full()
-            .child(
-                div()
-                    .p_2()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .debug_selector(|| "mail-write-new".into())
-                                    .child(write),
-                            )
-                            .child(
-                                div()
-                                    .debug_selector(|| "mail-add-account".into())
-                                    .child(add),
-                            ),
-                    )
-                    .child(list),
-            );
+            .child(div().p_2().child(list));
         // The host stays, so the list's focus survives the menu.
         let host = match &self.asked {
             Some(offer) => offer.host("mail-side-menu", self.menu(&offer.what, cx)),

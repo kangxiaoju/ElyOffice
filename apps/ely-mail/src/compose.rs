@@ -1,9 +1,9 @@
-//! The compose window (C12.12, MAIL-05).
+//! Native HTML email composition with decode-only legacy draft migration.
 
 use std::path::PathBuf;
 
 use ely_gpui_component::{
-    documents::{DocumentEvent, MarkdownDocument, MarkdownMode},
+    documents::email::{EmailDocument, EmailEditorEvent, HtmlEmailEditor},
     mail::Draft,
     primitives::Severity,
 };
@@ -20,6 +20,7 @@ mod keeping;
 mod lead;
 mod page;
 
+mod clipboard;
 #[cfg(test)]
 pub use keeping::PAUSE;
 pub use keeping::Shelf;
@@ -48,8 +49,8 @@ pub struct Compose {
     pub before: Option<Earlier>,
     /// Only the answered message's headers are kept.
     pub headers_only: bool,
-    pub markdown: bool,
-    pub document: Entity<MarkdownDocument>,
+    pub document: Entity<HtmlEmailEditor>,
+    import_failed: bool,
     pub files: Vec<File>,
     next_file: u64,
     /// Files picked and not yet read.
@@ -98,23 +99,33 @@ impl Compose {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        // A link's body is plain text.
-        let (words, markdown) = match (&opening.draft, &opening.asked) {
-            (Some(kept), _) => (kept.unsent.words.as_str(), kept.unsent.markdown),
-            (None, Some(asked)) if !asked.body.is_empty() => (asked.body.as_str(), false),
-            _ => ("", true),
+        let imported = match (&opening.draft, &opening.asked) {
+            (Some(kept), _) => match &kept.unsent.html {
+                Some(html) => EmailDocument::from_html(html).map_err(|error| error.to_string()),
+                None => compose::legacy_draft_html(&kept.unsent.words, kept.unsent.markdown)
+                    .map_err(|error| error.to_string())
+                    .and_then(|html| EmailDocument::from_html(&html).map_err(|error| error.to_string())),
+            },
+            (None, Some(asked)) => EmailDocument::from_plain(&asked.body).map_err(|error| error.to_string()),
+            _ => Ok(EmailDocument::default()),
         };
-        let mode = match markdown {
-            true => MarkdownMode::Visual,
-            false => MarkdownMode::Source,
-        };
-        let document = cx.new(|cx| MarkdownDocument::new(words, mode, window, cx));
-        cx.subscribe(&document, |compose, _, event, cx| {
-            if matches!(event, DocumentEvent::Changed) {
-                compose.touched(cx);
+        let import_problem = imported.as_ref().err().cloned();
+        let document = cx.new(|cx| {
+            let mut editor = HtmlEmailEditor::new(imported.unwrap_or_default(), window, cx);
+            editor.set_host_clipboard(true);
+            if let Some(error) = &import_problem {
+                editor.set_problem(Some(error.clone()), cx);
+                editor.set_read_only(true, cx);
             }
-        })
-        .detach();
+            editor
+        });
+        cx.subscribe(&document, |compose, _, event, cx| match event {
+            EmailEditorEvent::Changed => compose.touched(cx),
+            EmailEditorEvent::PasteRequested { request } => compose.paste(*request, cx),
+            EmailEditorEvent::CopyRequested { html, text, cut } => compose.copy(html.clone(), text.clone(), *cut, cx),
+            EmailEditorEvent::InsertImageRequested { request } => compose.pick_image(*request, cx),
+            EmailEditorEvent::Problem(error) => compose.editor_problem(error.clone(), cx),
+        }).detach();
         let this = cx.weak_entity();
         ely_gpui_component::shell::guard_close(window, cx, move |window, cx| {
             this.update(cx, |compose, cx| compose.may_close(window, cx))
@@ -132,8 +143,8 @@ impl Compose {
             references: Vec::new(),
             before: None,
             headers_only: false,
-            markdown,
             document,
+            import_failed: import_problem.is_some(),
             files: Vec::new(),
             next_file: 0,
             reading: 0,
@@ -141,16 +152,16 @@ impl Compose {
             offered: Vec::new(),
             base: Carried {
                 draft: blank(),
-                words: String::new(),
+                revision: 0,
+                empty: true,
                 files: Vec::new(),
                 from: opening.from,
-                markdown: true,
             },
             written: blank(),
             in_flight: None,
             to_queue: None,
             sending: false,
-            problem: None,
+            problem: import_problem.map(|error| (Severity::Danger, error.into())),
             discarding: false,
             shelf: Shelf::default(),
             window: window.window_handle(),
@@ -189,6 +200,7 @@ impl Compose {
             bcc: compose.bcc.clone(),
             subject: compose.subject.trim().to_owned().into(),
         };
+        compose.sync_images(cx);
         compose.base = compose.carried(cx);
         if let Some(id) = compose.shelf.id {
             compose.shelf = Shelf::reopened(id, compose.base.clone());
@@ -217,12 +229,14 @@ impl Compose {
 
     /// The composer's addresses and subject after an edit.
     pub fn edited(&mut self, draft: Draft, cx: &mut Context<Self>) {
+        if self.import_failed { return; }
         self.written = draft;
         self.touched(cx);
         cx.notify();
     }
 
     pub fn choose_sender(&mut self, from: AccountId, cx: &mut Context<Self>) {
+        if self.import_failed { return; }
         self.from = from;
         self.touched(cx);
         cx.notify();
@@ -241,25 +255,14 @@ impl Compose {
     }
 
     fn carried(&self, cx: &App) -> Carried {
+        let editor = self.document.read(cx);
         Carried {
             draft: self.written.clone(),
-            words: self.document.read(cx).text(cx),
+            revision: editor.committed_revision(),
+            empty: editor.committed_is_blank(),
             files: self.files.iter().map(|file| file.key).collect(),
             from: self.from,
-            markdown: self.markdown,
         }
-    }
-
-    fn set_markdown(&mut self, markdown: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.markdown = markdown;
-        let mode = match markdown {
-            true => MarkdownMode::Visual,
-            false => MarkdownMode::Source,
-        };
-        self.document
-            .update(cx, |document, cx| document.set_mode(mode, window, cx));
-        self.touched(cx);
-        cx.notify();
     }
 
     fn pick_files(&mut self, cx: &mut Context<Self>) {
@@ -285,13 +288,17 @@ impl Compose {
     /// Reads the files off the UI thread, then lists them.
     pub fn offer(&mut self, contacts: Vec<ely_mail_engine::Contact>, cx: &mut Context<Self>) {
         let named = |contact: ely_mail_engine::Contact| {
-            ely_gpui_component::mail::Contact::new(contact.name.unwrap_or_default(), contact.address)
+            ely_gpui_component::mail::Contact::new(
+                contact.name.unwrap_or_default(),
+                contact.address,
+            )
         };
         self.offered = contacts.into_iter().map(named).collect();
         cx.notify();
     }
 
     pub fn attach(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if self.import_failed { return; }
         let count = paths.len();
         self.reading += count;
         cx.notify();
@@ -333,9 +340,20 @@ impl Compose {
         .detach();
     }
 
+    #[cfg(test)]
     pub fn outgoing(&self, draft: &Draft, cx: &App) -> Option<Outgoing> {
+        self.body_job(draft, cx)?.encode().ok().map(|(_, out)| out)
+    }
+
+    fn body_job(&self, draft: &Draft, cx: &App) -> Option<BodyJob> {
         let sender = self.sender()?;
-        Some(Outgoing {
+        if self.import_failed { return None; }
+        let mut unsent = self.unsent_headers();
+        unsent.to = draft.to.iter().map(ToString::to_string).collect();
+        unsent.cc = draft.cc.iter().map(ToString::to_string).collect();
+        unsent.bcc = draft.bcc.iter().map(ToString::to_string).collect();
+        unsent.subject = draft.subject.to_string();
+        let out = Outgoing {
             from: Mailbox {
                 name: sender.identity.name.clone(),
                 email: sender.address.clone(),
@@ -344,15 +362,16 @@ impl Compose {
             cc: addresses(&draft.cc),
             bcc: addresses(&draft.bcc),
             subject: draft.subject.to_string(),
-            words: self.document.read(cx).text(cx),
-            markdown: self.markdown,
+            text: String::new(),
+            html: String::new(),
             signature: sender.identity.signature.clone(),
             before: self.before.clone(),
             attachments: self.files.iter().map(|file| file.part.clone()).collect(),
             in_reply_to: self.in_reply_to.clone(),
             references: self.references.clone(),
             date: jiff::Timestamp::now().as_second(),
-        })
+        };
+        Some(BodyJob { document: self.document.read(cx).snapshot(), unsent, out })
     }
 
     /// Hands it to the Outbox; the queue sends it.
@@ -364,7 +383,7 @@ impl Compose {
             return log::info!("mail: send waits for {} files", self.reading);
         }
         self.begin_sending(cx);
-        let Some(out) = self.outgoing(draft, cx) else {
+        let Some(job) = self.body_job(draft, cx) else {
             log::error!("mail: the sender {} is not listed", self.from.0);
             return self.queued(Err("the sender is not listed".into()), cx);
         };
@@ -372,14 +391,18 @@ impl Compose {
             "mail: queueing for {} addresses",
             draft.to.len() + draft.cc.len()
         );
-        let mut unsent = self.unsent(cx);
-        unsent.to = out.to.iter().map(|to| to.email.clone()).collect();
-        unsent.cc = out.cc.iter().map(|cc| cc.email.clone()).collect();
-        unsent.bcc = out.bcc.iter().map(|bcc| bcc.email.clone()).collect();
-        unsent.subject = out.subject.clone();
         let from = self.from;
-        self.to_queue = Some(Frozen { from, unsent, out });
-        self.queue_now(cx);
+        let encoded = cx.background_spawn(async move { job.encode() });
+        cx.spawn(async move |this, cx| {
+            let encoded = encoded.await;
+            this.update(cx, |compose, cx| match encoded {
+                Ok((unsent, out)) => {
+                    compose.to_queue = Some(Frozen { from, unsent, out });
+                    compose.queue_now(cx);
+                }
+                Err(error) => compose.queued(Err(error), cx),
+            }).ok();
+        }).detach();
     }
 
     /// Queues once no draft write is under way.
@@ -450,25 +473,44 @@ struct Frozen {
     out: Outgoing,
 }
 
+struct BodyJob {
+    document: EmailDocument,
+    unsent: ely_mail_engine::Unsent,
+    out: Outgoing,
+}
+
+impl BodyJob {
+    fn encode(mut self) -> Result<(ely_mail_engine::Unsent, Outgoing), String> {
+        let html = self.document.to_html();
+        EmailDocument::from_html(&html).map_err(|error| error.to_string())?;
+        for image in self.document.images() {
+            if let Some(cid) = image.source.strip_prefix("cid:") {
+                if !self.out.attachments.iter().any(|part| part.content_id.as_deref().is_some_and(|id| id.trim_matches(['<', '>']) == cid)) {
+                    return Err("An inline picture has no attachment".into());
+                }
+            }
+        }
+        self.out.text = self.document.to_plain();
+        self.unsent.html = Some(html.clone());
+        self.out.html = html;
+        Ok((self.unsent, self.out))
+    }
+}
+
 /// What one send carried.
 #[derive(Clone, PartialEq)]
 pub struct Carried {
     draft: Draft,
-    words: String,
+    revision: u64,
+    empty: bool,
     files: Vec<u64>,
     from: AccountId,
-    markdown: bool,
 }
 
 impl Carried {
     /// The same message, but for outer spaces.
     pub(super) fn blank_as(&self, base: &Carried) -> bool {
-        let words = self.words.trim() == base.words.trim();
-        words
-            && self.draft == base.draft
-            && self.files == base.files
-            && self.from == base.from
-            && self.markdown == base.markdown
+        (self.revision == base.revision || (self.empty && base.empty)) && self.draft == base.draft && self.files == base.files && self.from == base.from
     }
 }
 

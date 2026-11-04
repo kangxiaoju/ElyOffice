@@ -60,7 +60,7 @@ fn write(compose: WindowHandle<Compose>, words: &str, cx: &mut VisualTestContext
     with(compose, cx, |compose, _, cx| {
         compose
             .document
-            .update(cx, |document, cx| document.set_text(words, cx))
+            .update(cx, |document, cx| document.set_document(ely_gpui_component::documents::email::EmailDocument::from_plain(words).unwrap(), cx).unwrap())
     });
 }
 
@@ -91,7 +91,7 @@ fn quit_keeps_each_message_then_goes() {
     gone(second, cx);
     let mut words: Vec<_> = kept(&mail, cx)
         .into_iter()
-        .map(|draft| draft.unsent.words)
+        .map(|draft| draft.unsent.body_text())
         .collect();
     words.sort();
     assert_eq!(words, ["one", "two"], "each went into Drafts");
@@ -233,7 +233,7 @@ fn the_drawn_close_keeps_as_the_system_close_does() {
     press_close(compose.into(), cx);
     gone(compose, cx);
     let [draft] = kept(&mail, cx).try_into().unwrap();
-    assert_eq!(draft.unsent.words, "words");
+    assert_eq!(draft.unsent.body_text(), "words");
 }
 
 #[test]
@@ -263,13 +263,13 @@ fn a_success_keeps_edits_made_while_sending_as_a_draft() {
         let problem = cx.update(|_, app| compose.read(app).unwrap().problem.clone());
         assert_eq!(problem.map(|(severity, _)| severity), Some(Severity::Info));
         let [draft] = kept(&mail, cx).try_into().unwrap();
-        assert_eq!(draft.unsent.words, "before and late edit", "kept at once");
+        assert_eq!(draft.unsent.body_text(), "before and late edit", "kept at once");
         assert!(closes(compose, cx), "kept, it closes");
     }
 }
 
 #[test]
-fn a_success_keeps_the_window_when_the_sender_or_format_changed() {
+fn a_success_keeps_the_window_when_the_sender_changed() {
     let dir = tempfile::tempdir().unwrap();
     seeded(dir.path(), format!("{NOTE}\r\nx").as_bytes(), &[]);
     let cy = Store::open(dir.path())
@@ -278,39 +278,24 @@ fn a_success_keeps_the_window_when_the_sender_or_format_changed() {
         .unwrap();
     let mut cx = TestAppContext::single();
     let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
-    for sender in [false, true] {
-        cx.update(|_, app| mail.update(app, |mail, cx| mail.write_new(cx)));
-        let compose = opened(cx);
-        write(compose, "words", cx);
-        with(compose, cx, |compose, _, cx| {
-            compose.edited(draft(&["ann@example.com"], "Hi"), cx);
-            compose.begin_sending(cx);
-        });
-        if sender {
-            with(compose, cx, |compose, _, cx| compose.choose_sender(cy, cx));
-        } else {
-            let mut there = VisualTestContext::from_window(compose.into(), cx);
-            there.run_until_parked();
-            let plain = there
-                .debug_bounds("segment plain")
-                .expect("the format switch");
-            there.simulate_click(plain.center(), gpui::Modifiers::none());
-            there.run_until_parked();
-            assert!(!cx.update(|_, app| compose.read(app).unwrap().markdown));
-        }
-        with(compose, cx, |compose, _, cx| compose.queued(Ok(()), cx));
-        settle(cx, |app| drafts_in(&mail, app) == 1);
-        let problem = cx.update(|_, app| compose.read(app).map(|it| it.problem.clone()));
-        let severity = problem.ok().flatten().map(|(severity, _)| severity);
-        assert_eq!(severity, Some(Severity::Info), "sender changed: {sender}");
-        assert!(closes(compose, cx), "the unsent change was kept");
-        with(compose, cx, |_, window, _| window.remove_window());
-        gone(compose, cx);
-        let drafts = kept(&mail, cx);
-        let draft = drafts.first().expect("kept");
-        assert_eq!(draft.account == cy, sender);
-        assert_eq!(draft.unsent.markdown, sender);
-        let store = cx.update(|_, app| mail.read(app).store.clone().unwrap());
-        store.lock().unwrap().unshelve(draft.id).unwrap();
-    }
+    cx.update(|_, app| mail.update(app, |mail, cx| mail.write_new(cx)));
+    let compose = opened(cx);
+    write(compose, "words", cx);
+    with(compose, cx, |compose, _, cx| {
+        compose.edited(draft(&["ann@example.com"], "Hi"), cx);
+        compose.begin_sending(cx);
+    });
+    with(compose, cx, |compose, _, cx| compose.choose_sender(cy, cx));
+    with(compose, cx, |compose, _, cx| compose.queued(Ok(()), cx));
+    settle(cx, |app| drafts_in(&mail, app) == 1);
+    let problem = cx.update(|_, app| compose.read(app).map(|it| it.problem.clone()));
+    let severity = problem.ok().flatten().map(|(severity, _)| severity);
+    assert_eq!(severity, Some(Severity::Info));
+    assert!(closes(compose, cx), "the unsent change was kept");
+    with(compose, cx, |_, window, _| window.remove_window());
+    gone(compose, cx);
+    let drafts = kept(&mail, cx);
+    let draft = drafts.first().expect("kept");
+    assert_eq!(draft.account, cy);
+    assert!(draft.unsent.html.is_some());
 }

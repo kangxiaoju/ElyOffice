@@ -233,7 +233,7 @@ fn a_new_uidvalidity_rebuilds_and_a_refused_login_keeps_local_mail() {
     let drafts = cx.update(|_, app| {
         let store = mail.read(app).store.clone().unwrap();
         let drafts = store.lock().unwrap().drafts().unwrap();
-        drafts.into_iter().map(|each| each.unsent.words).collect::<Vec<_>>()
+        drafts.into_iter().map(|each| each.unsent.body_text()).collect::<Vec<_>>()
     });
     assert_eq!(drafts, ["half written"], "syncs never touch drafts");
     ended(&rt, task);

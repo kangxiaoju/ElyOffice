@@ -2,11 +2,12 @@
 
 pub(super) const EN: &[(&str, &str)] = &[
     ("mail.menu.account", "Account"),
-    ("mail.add.open", "Add Account…"),
+    ("mail.add.open", "Add Mailbox…"),
     ("mail.remove.open", "Remove Account…"),
     ("mail.cancel", "Cancel"),
     ("mail.empty", "No mail accounts yet"),
-    ("mail.boxes.unified", "Unified"),
+    ("mail.boxes.unified", "Mailboxes"),
+    ("mail.boxes.actions", "Mailbox actions"),
     (
         "mail.remove.none",
         "Open an account or one of its folders to remove it",
@@ -239,11 +240,12 @@ pub(super) const EN: &[(&str, &str)] = &[
 
 pub(super) const ZH_CN: &[(&str, &str)] = &[
     ("mail.menu.account", "账号"),
-    ("mail.add.open", "添加账号…"),
+    ("mail.add.open", "新增邮箱…"),
     ("mail.remove.open", "删除账号…"),
     ("mail.cancel", "取消"),
     ("mail.empty", "还没有邮件账号"),
-    ("mail.boxes.unified", "统一"),
+    ("mail.boxes.unified", "邮箱"),
+    ("mail.boxes.actions", "邮箱操作"),
     ("mail.remove.none", "先打开一个账号或其文件夹，再删除"),
     ("mail.boxes.all", "全部收件箱"),
     ("mail.boxes.inbox", "收件箱"),

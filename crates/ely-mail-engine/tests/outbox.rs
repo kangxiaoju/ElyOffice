@@ -5,19 +5,17 @@ use ely_mail_engine::{
 use fake::account;
 
 fn unsent() -> Unsent {
-    Unsent {
-        to: vec!["bo@example.com".into()],
-        cc: Vec::new(),
-        bcc: vec!["cy@example.com".into()],
-        subject: "Plan".into(),
-        words: "Lunch?".into(),
-        markdown: false,
-        earlier: None,
-        in_reply_to: None,
-        references: Vec::new(),
-        headers_only: false,
-        missing: 0,
-    }
+    Unsent { html: Some("<p>Lunch?</p>".into()), to: vec!["bo@example.com".into()],
+    cc: Vec::new(),
+    bcc: vec!["cy@example.com".into()],
+    subject: "Plan".into(),
+    words: String::new(),
+    markdown: false,
+    earlier: None,
+    in_reply_to: None,
+    references: Vec::new(),
+    headers_only: false,
+    missing: 0, }
 }
 
 fn letter() -> Letter {

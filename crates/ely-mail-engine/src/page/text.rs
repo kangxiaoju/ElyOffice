@@ -40,7 +40,7 @@ fn block_lines(block: &Block) -> Vec<String> {
                 false => format!("> {line}"),
             })
             .collect(),
-        Block::Table { head, rows } => std::iter::once(head)
+        Block::Table { head, rows, .. } => std::iter::once(head)
             .chain(rows.iter())
             .map(|row| {
                 row.iter()

@@ -49,11 +49,8 @@ pub fn rows(drafts: &[Shelved], none: &(SharedString, SharedString)) -> Vec<Row>
                     Row::undated(key(draft.id), to, subject)
                 }
             };
-            let first = draft
-                .unsent
-                .words
-                .lines()
-                .find(|line| !line.trim().is_empty());
+            let body = draft.unsent.body_text();
+            let first = body.lines().find(|line| !line.trim().is_empty());
             match first {
                 Some(line) => row.snippet(line.trim().to_owned()),
                 None => row,
@@ -121,9 +118,7 @@ impl Mail {
             .debug_selector(|| "mail-draft-words".into())
             .whitespace_normal()
             .children(
-                draft
-                    .unsent
-                    .words
+                draft.unsent.body_text()
                     .lines()
                     .map(|line| div().child(line.to_owned())),
             );

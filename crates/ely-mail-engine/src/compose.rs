@@ -1,7 +1,9 @@
 //! Answers, forwards and the bodies they send (C12.12, MAIL-05).
 
-use crate::{Error, Mail, Mailbox, Part, Result, page};
+use crate::{Mail, Mailbox, Part, Result, page};
 use serde::{Deserialize, Serialize};
+
+mod legacy;
 
 /// Where an answer or a forward starts.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,27 +116,37 @@ pub enum Earlier {
 
 /// What the writer wrote, and what goes under it.
 pub struct Writing<'a> {
-    pub words: &'a str,
-    /// The words are Markdown; plain text only otherwise.
-    pub markdown: bool,
+    /// The editor's plain-text alternative, never Markdown.
+    pub text: &'a str,
+    /// The editor's native HTML serialization.
+    pub html: &'a str,
     /// Empty for none.
     pub signature: &'a str,
     pub earlier: Option<&'a Earlier>,
 }
 
-/// A message's plain text, and its HTML for Markdown.
+/// A message's explicit plain-text and HTML alternatives.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bodies {
     pub text: String,
     pub html: Option<String>,
 }
+/// Imports a pre-HTML draft once; never used for newly edited messages.
+pub fn legacy_draft_html(words: &str, markdown: bool) -> Result<String> {
+    if markdown {
+        legacy::bodies(words).map(|(_, html)| html)
+    } else {
+        Ok(format!("<div style=\"white-space:pre-wrap\">{}</div>", escape(words).replace('\n', "<br>")))
+    }
+}
 
 pub fn bodies(writing: &Writing) -> Result<Bodies> {
-    let words = writing.words.trim_end();
     let signature = writing.signature.trim();
+    let body = writing.text.to_owned();
+    let mut html = writing.html.to_owned();
     let mut text = Vec::new();
-    if !words.is_empty() {
-        text.push(words.to_owned());
+    if !body.is_empty() {
+        text.push(body);
     }
     if !signature.is_empty() {
         // RFC 3676 §4.3: dash, dash, space.
@@ -156,11 +168,6 @@ pub fn bodies(writing: &Writing) -> Result<Bodies> {
         None => {}
     }
     let text = text.join("\n\n");
-    if !writing.markdown {
-        return Ok(Bodies { text, html: None });
-    }
-    let mut html = markdown::to_html_with_options(words, &markdown::Options::gfm())
-        .map_err(|err| Error::Mime(err.to_string()))?;
     if !signature.is_empty() {
         html.push_str(&format!("<p>-- <br>\n{}</p>\n", lines(signature)));
     }

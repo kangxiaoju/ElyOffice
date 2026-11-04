@@ -39,7 +39,7 @@ fn a_kept_draft_goes_into_the_queue_with_it() {
     with(compose, cx, |compose, window, cx| {
         compose.send(&addressed, window, cx);
         let document = compose.document.clone();
-        document.update(cx, |document, cx| document.set_text("Lunch at one?", cx));
+        document.update(cx, |document, cx| document.set_document(ely_gpui_component::documents::email::EmailDocument::from_plain("Lunch at one?").unwrap(), cx).unwrap());
         compose.keep(cx);
         assert!(!compose.shelf_busy(), "no draft write while sending");
     });
@@ -50,7 +50,7 @@ fn a_kept_draft_goes_into_the_queue_with_it() {
     });
     let [later] = kept(&mail, cx).try_into().unwrap();
     assert_ne!(later.id, first, "the sent draft went with the queue");
-    assert_eq!(later.unsent.words, "Lunch at one?", "edits while sending");
+    assert_eq!(later.unsent.body_text(), "Lunch at one?", "edits while sending");
     assert!(cx.update(|_, app| compose.read(app).is_ok()), "it stays");
 }
 
@@ -90,7 +90,7 @@ fn a_send_queues_what_was_there_when_pressed() {
         compose.send(&addressed, window, cx);
         assert!(compose.shelf_busy(), "the send waits for the write");
         let document = compose.document.clone();
-        document.update(cx, |document, cx| document.set_text("Lunch at one?", cx));
+        document.update(cx, |document, cx| document.set_document(ely_gpui_component::documents::email::EmailDocument::from_plain("Lunch at one?").unwrap(), cx).unwrap());
     });
     settle(cx, |app| {
         let store = mail.read(app).store.clone().unwrap();
@@ -98,10 +98,10 @@ fn a_send_queues_what_was_there_when_pressed() {
         outbox(&mail, app).len() == 1 && drafts.len() == 1
     });
     let [queued] = cx.update(|_, app| outbox(&mail, app)).try_into().unwrap();
-    assert_eq!(queued.unsent.words, "Lunch?", "the words as pressed");
+    assert_eq!(queued.unsent.body_text(), "Lunch?", "the words as pressed");
     let [later] = kept(&mail, cx).try_into().unwrap();
     assert_eq!(
-        later.unsent.words, "Lunch at one?",
+        later.unsent.body_text(), "Lunch at one?",
         "later edits stay a draft"
     );
 }

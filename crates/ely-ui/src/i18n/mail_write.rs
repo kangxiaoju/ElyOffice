@@ -3,8 +3,6 @@
 pub(super) const EN: &[(&str, &str)] = &[
     ("mail.write.title", "New Message"),
     ("mail.write.from", "From"),
-    ("mail.write.plain", "Plain text"),
-    ("mail.write.markdown", "Markdown"),
     ("mail.write.wrote", "On {date}, {sender} wrote:"),
     ("mail.write.wrote_undated", "{sender} wrote:"),
     (
@@ -70,8 +68,6 @@ pub(super) const EN: &[(&str, &str)] = &[
 pub(super) const ZH_CN: &[(&str, &str)] = &[
     ("mail.write.title", "新邮件"),
     ("mail.write.from", "发件人"),
-    ("mail.write.plain", "纯文本"),
-    ("mail.write.markdown", "Markdown"),
     ("mail.write.wrote", "{sender} 于 {date} 写道："),
     ("mail.write.wrote_undated", "{sender} 写道："),
     ("mail.write.forwarded", "---------- 转发的邮件 ----------"),

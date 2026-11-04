@@ -162,8 +162,8 @@ fn a_message_is_built_with_its_hidden_copies_off_the_page() {
         cc: vec![mailbox("ANN@example.com"), mailbox("cy@example.com")],
         bcc: vec![mailbox("hidden@example.com")],
         subject: "Plans bcc marker".into(),
-        words: "**Friday** then".into(),
-        markdown: true,
+        text: "Friday then".into(),
+        html: "<p><strong>Friday</strong> then</p>".into(),
         signature: "Bo".into(),
         before: None,
         attachments: vec![attachment("plan.pdf", b"%PDF".to_vec())],
@@ -191,20 +191,10 @@ fn a_message_is_built_with_its_hidden_copies_off_the_page() {
     assert_eq!(sent.subject.as_deref(), Some("Plans bcc marker"));
     assert_eq!(sent.from[0].name.as_deref(), Some("Bo Lee"));
     let text = sent.text.unwrap().replace("\r\n", "\n");
-    assert_eq!(text.trim_end(), "**Friday** then\n\n-- \nBo");
+    assert_eq!(text.trim_end(), "Friday then\n\n-- \nBo");
     assert!(sent.html.unwrap().contains("<strong>Friday</strong>"));
     assert_eq!(sent.attachments[0].name.as_deref(), Some("plan.pdf"));
-    let plain = Outgoing {
-        markdown: false,
-        ..out
-    };
-    assert_eq!(
-        read(&without_bcc(&prepare(&plain).unwrap().bytes).unwrap())
-            .unwrap()
-            .html,
-        None
-    );
-    let copy = prepare(&plain).unwrap().bytes;
+    let copy = prepare(&out).unwrap().bytes;
     let copy = String::from_utf8_lossy(&copy);
     let head = &copy[..copy.find("\r\n\r\n").unwrap()];
     assert!(
@@ -216,6 +206,116 @@ fn a_message_is_built_with_its_hidden_copies_off_the_page() {
             .any(|line| line.to_ascii_lowercase().starts_with("bcc:")),
         "{head}"
     );
+}
+
+#[test]
+fn legacy_drafts_reopen_as_html_without_exposing_format_syntax() {
+    use ely_gpui_component::documents::email::EmailDocument;
+    for (markdown, source, visible) in [
+        (false, "**literal**", "**literal**"),
+        (true, "**formatted**", "formatted"),
+    ] {
+        let html = ely_mail_engine::compose::legacy_draft_html(source, markdown).unwrap();
+        let document = EmailDocument::from_html(&html).unwrap();
+        assert_eq!(document.to_plain(), visible);
+        let mut draft = super::outbox::unsent("");
+        draft.html = Some(document.to_html());
+        let json = serde_json::to_string(&draft).unwrap();
+        assert!(!json.contains("\"words\""));
+        assert!(!json.contains("\"markdown\""));
+        let restored: ely_mail_engine::Unsent = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.html, draft.html);
+        let bodies = ely_mail_engine::compose::bodies(&ely_mail_engine::compose::Writing {
+            text: &document.to_plain(), html: restored.html.as_deref().unwrap(),
+            signature: "", earlier: None,
+        }).unwrap();
+        assert_eq!(bodies.text, visible);
+        assert!(bodies.html.is_some());
+    }
+}
+
+#[test]
+fn old_plain_and_markdown_json_reopen_in_native_editor_and_roundtrip_mime() {
+    for markdown in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        seeded(dir.path(), format!("{NOTE}\r\nx").as_bytes(), &[]);
+        let store = Store::open(dir.path()).unwrap();
+        let from = store.accounts().unwrap()[0].0;
+        let senders = crate::writing::senders(&store).unwrap();
+        let unsent: ely_mail_engine::Unsent = serde_json::from_value(serde_json::json!({
+            "to": ["ann@example.com"], "cc": [], "bcc": [], "subject": "Old",
+            "words": "**Lunch**", "markdown": markdown, "earlier": null,
+            "in_reply_to": null, "references": [], "headers_only": false, "missing": 0
+        })).unwrap();
+        let mut cx = TestAppContext::single();
+        let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+        cx.update(|_, app| mail.update(app, |mail, cx| mail.open_compose(crate::writing::Opening {
+            senders, from, answered: None, asked: None,
+            draft: Some(crate::compose::Reopened { id: ely_mail_engine::DraftId(900), unsent, files: Vec::new() }),
+        }, cx)));
+        let compose = opened(cx);
+        let out = cx.update(|_, app| compose.read(app).unwrap().outgoing(&draft(&["ann@example.com"], "Old"), app).unwrap());
+        assert_eq!(out.text, if markdown { "Lunch" } else { "**Lunch**" });
+        assert_eq!(out.html.contains("<strong>Lunch</strong>"), markdown);
+        let sent = read(&prepare(&out).unwrap().bytes).unwrap();
+        assert_eq!(sent.text.unwrap().trim_end(), out.text);
+        assert_eq!(sent.html.unwrap().contains("<strong>Lunch</strong>"), markdown);
+    }
+}
+
+#[test]
+fn malformed_draft_can_close_without_overwriting_after_header_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    seeded(dir.path(), format!("{NOTE}\r\nx").as_bytes(), &[]);
+    let mut store = Store::open(dir.path()).unwrap();
+    let from = store.accounts().unwrap()[0].0;
+    let mut broken = super::outbox::unsent("");
+    broken.html = Some("x".repeat(2 * 1024 * 1024 + 1));
+    let id = store.shelve(None, from, &broken, None).unwrap().id;
+    let mut cx = TestAppContext::single();
+    let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+    cx.update(|_, app| mail.update(app, |mail, cx| mail.reopen(id, cx)));
+    let compose = opened(cx);
+    let may_close = cx.update(|_, app| compose.update(app, |compose, window, cx| {
+        compose.edited(draft(&["ann@example.com"], "cannot save header"), cx);
+        compose.choose_sender(ely_mail_engine::AccountId(from.0 + 100), cx);
+        compose.attach(vec![dir.path().join("must-not-read.png")], cx);
+        assert_eq!(compose.from, from, "sender changes are rejected");
+        assert_eq!(compose.reading, 0, "attachment requests are rejected before IO");
+        assert!(compose.outgoing(&draft(&["ann@example.com"], "broken"), cx).is_none());
+        compose.keep(cx);
+        assert!(compose.outgoing(&draft(&["ann@example.com"], "broken"), cx).is_none());
+        compose.may_close(window, cx)
+    }).unwrap());
+    assert!(may_close, "malformed bodies keep their stored source and may safely close");
+    assert_eq!(store.draft(id).unwrap().unwrap().unsent.html, broken.html);
+    assert_eq!(store.draft(id).unwrap().unwrap().unsent.subject, broken.subject);
+}
+
+#[test]
+fn asynchronous_clipboard_and_picture_results_refuse_later_edits() {
+    use ely_gpui_component::documents::email::{EmailAlign, EmailDocument, EmailImage};
+    let dir = tempfile::tempdir().unwrap();
+    seeded(dir.path(), format!("{NOTE}\r\nx").as_bytes(), &[]);
+    let mut cx = TestAppContext::single();
+    let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+    cx.update(|_, app| mail.update(app, |mail, cx| mail.write_new(cx)));
+    let compose = opened(cx);
+    cx.update(|_, app| compose.update(app, |compose, _, cx| {
+        compose.document.update(cx, |editor, cx| {
+            let paste = editor.request_paste(cx);
+            editor.insert_text("later", cx).unwrap();
+            assert!(editor.complete_paste(paste, EmailDocument::from_html("<p><strong>stale</strong></p>").unwrap(), cx).is_err());
+            let picture = editor.request_image(cx);
+            editor.insert_text(" edit", cx).unwrap();
+            assert!(editor.complete_image(picture, EmailImage {
+                source: "cid:stale@image".into(), alt: "stale".into(), width: Some(1), height: Some(1), align: EmailAlign::Left,
+            }, cx).is_err());
+            assert_eq!(editor.document().to_plain(), "later edit");
+            assert!(!editor.document().to_html().contains("stale"));
+        });
+        assert!(compose.files.is_empty(), "a stale result cannot attach orphaned bytes");
+    }).unwrap());
 }
 
 #[test]
@@ -239,7 +339,7 @@ fn words_written_are_kept_on_closing() {
             .update(app, |compose, _, cx| {
                 compose
                     .document
-                    .update(cx, |document, cx| document.set_text("Hello", cx))
+                    .update(cx, |document, cx| document.set_document(ely_gpui_component::documents::email::EmailDocument::from_plain("Hello").unwrap(), cx).unwrap())
             })
             .unwrap()
     });

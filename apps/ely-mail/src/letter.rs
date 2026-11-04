@@ -63,16 +63,7 @@ pub fn letter(stored: &Stored, kept: Kept, words: &Words) -> Result<Letter, Stri
     Ok(Letter { headers, body })
 }
 
-pub fn body(missing: &[String], mail: ely_mail_engine::Mail, words: &Words) -> Body {
-    let read = page::read(&mail.shown, &mail.inline);
-    let snippet = read.snippet(SNIPPET);
-    let mut held = Held {
-        inline: &mail.inline,
-        pictures: Pictures::new(),
-        data: 0,
-        words,
-    };
-    let blocks = held.nodes(read.blocks);
+pub fn body(missing: &[String], mut mail: ely_mail_engine::Mail, words: &Words) -> Body {
     let files = mail
         .attachments
         .iter()
@@ -86,6 +77,19 @@ pub fn body(missing: &[String], mail: ely_mail_engine::Mail, words: &Words) -> B
             (name, (!waiting).then_some(part.bytes.len() as u64))
         })
         .collect();
+    // Some senders (including older Yu versions) mark CID images as attachments.
+    // Keep their download rows, but also make their bytes available to CID lookup.
+    mail.inline.extend(mail.attachments.into_iter()
+        .filter(|part| part.content_id.is_some() && part.content_type.starts_with("image/")));
+    let read = page::read(&mail.shown, &mail.inline);
+    let snippet = read.snippet(SNIPPET);
+    let mut held = Held {
+        inline: &mail.inline,
+        pictures: Pictures::new(),
+        data: 0,
+        words,
+    };
+    let blocks = held.nodes(read.blocks);
     Body {
         blocks,
         pictures: held.pictures,
@@ -142,8 +146,9 @@ impl Held<'_> {
                     .map(|item| (None, self.nodes(item)))
                     .collect(),
             },
-            Block::Table { head, rows } => Node::Table {
+            Block::Table { head, rows, spans } => Node::Table {
                 aligns: vec![AlignKind::None; head.len()],
+                spans,
                 head: head.into_iter().map(|cell| self.nodes(cell)).collect(),
                 rows: rows
                     .into_iter()

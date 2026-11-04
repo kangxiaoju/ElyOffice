@@ -2,8 +2,8 @@
 
 use ely_gpui_component::primitives::Severity;
 use ely_mail_engine::{
-    AccountId, Error, Filed, Filing, Going, Landing, Letter, OutboxId, Protocol, Queued,
-    Store, Unsent, compose::attachment,
+    AccountId, Error, Filed, Filing, Going, Landing, Letter, OutboxId, Protocol, Queued, Store,
+    Unsent, compose::attachment,
 };
 use gpui::{Entity, TestAppContext, VisualTestContext};
 
@@ -38,19 +38,17 @@ pub(super) fn with_password() -> Keys {
 }
 
 pub(super) fn unsent(words: &str) -> Unsent {
-    Unsent {
-        to: vec!["ann@example.com".into()],
-        cc: Vec::new(),
-        bcc: Vec::new(),
-        subject: "Hi".into(),
-        words: words.into(),
-        markdown: false,
-        earlier: None,
-        in_reply_to: None,
-        references: Vec::new(),
-        headers_only: false,
-        missing: 0,
-    }
+    Unsent { html: None, to: vec!["ann@example.com".into()],
+    cc: Vec::new(),
+    bcc: Vec::new(),
+    subject: "Hi".into(),
+    words: words.into(),
+    markdown: false,
+    earlier: None,
+    in_reply_to: None,
+    references: Vec::new(),
+    headers_only: false,
+    missing: 0, }
 }
 
 /// Queued before the window opens; `taken` was mid-send.
@@ -102,7 +100,7 @@ fn an_unreached_server_leaves_the_message_waiting() {
     settle(cx, |app| mail.read(app).pending == 1);
     assert!(kept(&mail, cx).is_empty(), "the draft went with it");
     let [waiting] = cx.update(|_, app| outbox(&mail, app)).try_into().unwrap();
-    assert_eq!(waiting.unsent.words, "Lunch?");
+    assert_eq!(waiting.unsent.body_text(), "Lunch?");
     assert_eq!(waiting.unsent.to, ["ann@example.com"]);
 }
 
@@ -151,7 +149,10 @@ fn a_failed_message_cancels_or_goes_back_to_a_draft() {
     let [again] = composing(cx).try_into().unwrap();
     cx.update(|_, app| {
         let again = again.read(app).unwrap();
-        assert_eq!(again.document.read(app).text(app), "Lunch?");
+        assert_eq!(
+            again.document.read(app).document().to_plain(),
+            "Lunch?"
+        );
         assert_eq!(again.to, ["ann@example.com"]);
         assert_eq!(again.files.len(), 1);
     });

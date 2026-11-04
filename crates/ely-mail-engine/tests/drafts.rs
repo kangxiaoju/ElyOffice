@@ -5,22 +5,20 @@ use ely_mail_engine::{
 use fake::account;
 
 fn unsent(subject: &str) -> Unsent {
-    Unsent {
-        to: vec!["bo@example.com".into()],
-        cc: Vec::new(),
-        bcc: vec!["cy@example.com".into()],
-        subject: subject.into(),
-        words: "Lunch at **one**?".into(),
-        markdown: true,
-        earlier: Some(Earlier::Quoted {
-            lead: "Bo wrote:".into(),
-            text: "Lunch?".into(),
-        }),
-        in_reply_to: Some("<a@x>".into()),
-        references: vec!["<a@x>".into()],
-        headers_only: false,
-        missing: 1,
-    }
+    Unsent { html: Some("<p>Lunch at <strong>one</strong>?</p>".into()), to: vec!["bo@example.com".into()],
+    cc: Vec::new(),
+    bcc: vec!["cy@example.com".into()],
+    subject: subject.into(),
+    words: String::new(),
+    markdown: false,
+    earlier: Some(Earlier::Quoted {
+        lead: "Bo wrote:".into(),
+        text: "Lunch?".into(),
+    }),
+    in_reply_to: Some("<a@x>".into()),
+    references: vec!["<a@x>".into()],
+    headers_only: false,
+    missing: 1, }
 }
 
 #[test]
@@ -149,4 +147,27 @@ fn drafts_stay_local_until_asked() {
     drop(store);
     let store = Store::open(dir.path()).unwrap();
     assert!(store.drafts_up(ann).unwrap());
+}
+
+#[test]
+fn consumer_rejects_unknown_body_versions_without_rewriting_source() {
+    let current = serde_json::to_value(unsent("Versioned")).unwrap();
+    assert_eq!(current["body_version"], 1);
+    assert!(serde_json::from_value::<Unsent>(current.clone()).is_ok());
+    let mut missing_html = current.clone();
+    missing_html.as_object_mut().unwrap().remove("html");
+    assert!(serde_json::from_value::<Unsent>(missing_html).is_err());
+    let mut legacy = current.clone();
+    legacy.as_object_mut().unwrap().remove("body_version");
+    legacy.as_object_mut().unwrap().remove("html");
+    legacy["words"] = "old literal".into();
+    assert_eq!(serde_json::from_value::<Unsent>(legacy).unwrap().words, "old literal");
+    for version in [serde_json::json!(2), serde_json::json!(0), serde_json::json!(-1), serde_json::json!("1"), serde_json::Value::Null] {
+        let mut future = current.clone();
+        future["body_version"] = version;
+        let original = serde_json::to_string(&future).unwrap();
+        let result = serde_json::from_str::<Unsent>(&original);
+        assert!(result.is_err(), "unknown format must never be treated as editable HTML: {original}");
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&original).unwrap(), future);
+    }
 }
