@@ -12,7 +12,7 @@ use gpui::Context;
 use super::clock::Picture;
 use super::input::{Back, Input};
 use super::{Geom, LokError, LokView, Reported, TILE_TWIPS};
-use crate::{Doc, Tile, Worker};
+use crate::{Doc, Tile, Waiter, Worker};
 
 /// An input slower than this is logged as a warning.
 const SLOW_MS: u128 = 100;
@@ -34,13 +34,32 @@ enum Landed {
 
 /// The lane's two queues.
 pub(super) struct Lane {
-    pub inputs: mpsc::UnboundedSender<(u64, Input, Instant)>,
+    inputs: mpsc::UnboundedSender<(u64, Input, Instant)>,
     pub tiles: mpsc::UnboundedSender<Job>,
+    /// gpui's clock: tests move it.
+    clock: gpui::BackgroundExecutor,
+    /// When a key last went in.
+    typed: Option<Instant>,
+}
+
+impl Lane {
+    /// Queues input `seq`; keys mark the typing time.
+    pub(super) fn queue(&mut self, seq: u64, input: Input) {
+        if matches!(input, Input::Key { .. } | Input::Text { .. } | Input::Complete { .. } | Input::Turn { key: Some(_), .. }) {
+            self.typed = Some(self.clock.now());
+        }
+        self.inputs.unbounded_send((seq, input, Instant::now())).expect("the input queue lives with the view");
+    }
 }
 
 impl LokView {
+    /// The last key's time, on gpui's clock.
+    pub fn typed_at(&self) -> Option<Instant> {
+        self.lane.typed
+    }
+
     /// Starts the lane; it ends with the view.
-    pub(super) fn lane(worker: Arc<Mutex<Worker>>, doc: Doc, wanted: super::reveal::Wanted, cx: &mut Context<Self>) -> Lane {
+    pub(super) fn lane((worker, waiter): (Arc<Mutex<Worker>>, Waiter), doc: Doc, wanted: super::reveal::Wanted, cx: &mut Context<Self>) -> Lane {
         let (inputs, mut input_queue) = mpsc::unbounded::<(u64, Input, Instant)>();
         let (tiles, mut tile_queue) = mpsc::unbounded::<Job>();
         let (landing, mut landed) = mpsc::unbounded::<Landed>();
@@ -55,7 +74,8 @@ impl LokView {
                             while let Ok(more) = input_queue.try_recv() {
                                 batch.push(more);
                             }
-                            let mut held = worker.lock().expect("the worker lock");
+                            // A snapshot in the way gives up the worker.
+                            let mut held = waiter.hold(&worker);
                             let mut done = Vec::with_capacity(batch.len());
                             for (seq, input, sent) in batch {
                                 let (waited, edits, kind) = (sent.elapsed().as_millis(), input.edits(), input.kind());
@@ -115,7 +135,7 @@ impl LokView {
             }
         })
         .detach();
-        Lane { inputs, tiles }
+        Lane { inputs, tiles, clock: cx.background_executor().clone(), typed: None }
     }
 
     fn take_landed(&mut self, batch: Vec<Landed>, cx: &mut Context<Self>) {

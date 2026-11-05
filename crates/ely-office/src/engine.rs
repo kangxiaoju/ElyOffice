@@ -49,6 +49,14 @@ pub trait Engine: Sized + 'static {
     fn risk(_loaded: &Self::Loaded) -> Option<crate::Risk> {
         None
     }
+    /// The sources the document's links read (LOK-11).
+    fn links(_loaded: &Self::Loaded) -> Vec<String> {
+        Vec::new()
+    }
+    /// Reads every link again; the failed sources come back.
+    fn update_links(_worker: &mut Self::Worker, _doc: &Self::Doc) -> io::Result<Vec<String>> {
+        Err(io::Error::new(io::ErrorKind::Unsupported, "this engine has no links"))
+    }
     /// The undo history as a mark to compare.
     fn history(worker: &mut Self::Worker, doc: &Self::Doc) -> io::Result<String>;
     /// Writes `doc` as `format` to `path`; `closing` ends open edits.
@@ -62,6 +70,10 @@ pub trait Engine: Sized + 'static {
     /// A copy of `doc` at `path`; `doc` stays.
     fn snapshot(_worker: &mut Self::Worker, _doc: &Self::Doc, _path: &Path, format: &str) -> io::Result<()> {
         Err(io::Error::new(io::ErrorKind::Unsupported, format!("no snapshot as .{format}")))
+    }
+    /// A recovery point; input may stop it (`Interrupted`).
+    fn point(worker: &mut Self::Worker, doc: &Self::Doc, path: &Path, format: &str) -> io::Result<()> {
+        Self::snapshot(worker, doc, path, format)
     }
     fn close(worker: &mut Self::Worker, doc: Self::Doc) -> io::Result<()>;
     /// A closing view's images, for the shell to free.
@@ -86,6 +98,10 @@ pub trait Engine: Sized + 'static {
     fn edited(view: &Self::View) -> u64;
     /// An edit is sent but not landed.
     fn edit_pending(view: &Self::View) -> bool;
+    /// When a key last went in; saves wait on it.
+    fn typed_at(_view: &Self::View) -> Option<std::time::Instant> {
+        None
+    }
     fn focus(view: &Self::View) -> FocusHandle;
     /// The document was saved at history `mark`.
     fn saved(view: &Entity<Self::View>, mark: &str, cx: &mut App);

@@ -34,6 +34,17 @@ fn titled_toc_field_ends_in_its_own_paragraph() {
 }
 
 #[test]
+fn an_untitled_toc_ends_in_the_paragraph_after_it() {
+    saved_twice("toc-untitled.docx", "toc-alone");
+    saved_twice("toc-bare.docx", "toc-alone");
+}
+
+#[test]
+fn a_writer_toc_keeps_the_text_after_it() {
+    saved_twice("toc-native.fodt", "toc-native");
+}
+
+#[test]
 fn text_after_a_toc_field_end_stays_outside_the_field() {
     saved_twice("toc-tail.docx", "toc-tail");
     saved_twice("toc-tail-untitled.docx", "toc-tail");
@@ -53,7 +64,7 @@ fn an_inline_content_control_keeps_the_toc_end_alone() {
 }
 
 /// Whether the kernel has reported the document modified.
-fn modified(seen: &Events) -> bool {
+pub(super) fn modified(seen: &Events) -> bool {
     seen.states.iter().any(|(name, state)| name == ".uno:ModifiedStatus" && state == "true")
 }
 

@@ -7,6 +7,7 @@ mod ffi;
 mod handshake;
 pub mod history;
 mod ipc;
+pub mod links;
 pub mod menu;
 pub mod review;
 pub mod sheet;
@@ -16,7 +17,7 @@ mod worker;
 
 pub use client::{
     A11y, Cell, Damaged, Doc, Events, Feed, Function, MIXED, Mark, Mouse, Pdf, Rect, Request, Sheet, Sheets, Tile,
-    Worker, install_dir, is_nothing, is_stale, templates,
+    Waiter, Worker, install_dir, is_nothing, is_stale, templates,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use client::test_install;

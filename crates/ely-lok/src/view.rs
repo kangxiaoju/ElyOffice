@@ -133,7 +133,8 @@ pub struct LokView {
     a11y: crate::A11y,
     /// What readers call the view.
     name: gpui::SharedString,
-    tabs: Vec<i32>,
+    /// The paragraph's tab stops and the revision that read them.
+    tabs: (Vec<i32>, u64),
     read_only: bool,
 }
 
@@ -158,10 +159,10 @@ impl LokView {
         worker: Arc<Mutex<Worker>>,
         doc: Doc,
         (size, pages): Layout,
-        feed: crate::Feed,
+        (feed, waiter): (crate::Feed, crate::Waiter),
         cx: &mut App,
     ) -> Entity<Self> {
-        cx.new(|cx| Self::sized(worker, doc, size, pages, feed, cx))
+        cx.new(|cx| Self::sized(worker, doc, size, pages, (feed, waiter), cx))
     }
 
     fn sized(
@@ -169,12 +170,12 @@ impl LokView {
         doc: Doc,
         (width, height): (i64, i64),
         pages: Vec<Rect>,
-        feed: crate::Feed,
+        (feed, waiter): (crate::Feed, crate::Waiter),
         cx: &mut Context<Self>,
     ) -> Self {
         log::info!("lok: {} pages", pages.len());
         let wanted: reveal::Wanted = Arc::new(Mutex::new((Geom { zoom: 1.0, dpi: 1.0 }, HashSet::new())));
-        let lane = Self::lane(Arc::clone(&worker), doc.clone(), Arc::clone(&wanted), cx);
+        let lane = Self::lane((Arc::clone(&worker), waiter), doc.clone(), Arc::clone(&wanted), cx);
         let mut view = Self {
             worker,
             doc,
@@ -237,7 +238,7 @@ impl LokView {
             a11y: crate::A11y::default(),
             read_only: false,
             name: gpui::SharedString::default(),
-            tabs: Vec::new(),
+            tabs: (Vec::new(), 0),
             watching: None,
         };
         view.watching = Some(view.watch(feed, cx));
@@ -416,7 +417,10 @@ impl LokView {
             cx.emit(LokError(fault));
         }
         self.a11y = batch.a11y;
-        self.tabs = batch.tabs;
+        match batch.revision < self.tabs.1 {
+            true => log::debug!("lok: tab stops read at {} are older than {}", batch.revision, self.tabs.1),
+            false => self.tabs = (batch.tabs, batch.revision),
+        }
         self.states.extend(batch.states);
         self.relay(batch.blocked, batch.links, cx);
         cx.emit(Reported);
