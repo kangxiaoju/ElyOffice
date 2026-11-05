@@ -7,6 +7,7 @@ pub(super) const KO: &[(&str, &str)] = &[
     ("mail.cancel", "취소"),
     ("mail.empty", "아직 메일 계정이 없습니다"),
     ("mail.boxes.unified", "통합"),
+    ("mail.boxes.actions", "메일함 작업"),
     ("mail.remove.none", "제거하려면 계정이나 그 폴더 중 하나를 여십시오"),
     ("mail.boxes.all", "모든 받은 편지함"),
     ("mail.boxes.inbox", "받은 편지함"),

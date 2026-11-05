@@ -7,6 +7,7 @@ pub(super) const FR: &[(&str, &str)] = &[
     ("mail.cancel", "Annuler"),
     ("mail.empty", "Aucun compte de courrier pour l’instant"),
     ("mail.boxes.unified", "Unifiée"),
+    ("mail.boxes.actions", "Actions de la boîte mail"),
     ("mail.remove.none", "Ouvrez un compte ou l’un de ses dossiers pour le supprimer"),
     ("mail.boxes.all", "Toutes les boîtes de réception"),
     ("mail.boxes.inbox", "Boîte de réception"),

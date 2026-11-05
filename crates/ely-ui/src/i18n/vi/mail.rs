@@ -7,6 +7,7 @@ pub(super) const VI: &[(&str, &str)] = &[
     ("mail.cancel", "Hủy"),
     ("mail.empty", "Chưa có tài khoản thư nào"),
     ("mail.boxes.unified", "Hợp nhất"),
+    ("mail.boxes.actions", "Thao tác hộp thư"),
     ("mail.remove.none", "Hãy mở một tài khoản hoặc một thư mục của nó để gỡ tài khoản"),
     ("mail.boxes.all", "Mọi hộp thư đến"),
     ("mail.boxes.inbox", "Hộp thư đến"),

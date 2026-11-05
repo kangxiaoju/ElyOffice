@@ -7,6 +7,7 @@ pub(super) const JA: &[(&str, &str)] = &[
     ("mail.cancel", "キャンセル"),
     ("mail.empty", "メールアカウントはまだありません"),
     ("mail.boxes.unified", "統合"),
+    ("mail.boxes.actions", "メールボックスの操作"),
     ("mail.remove.none", "削除するアカウントか、そのフォルダーを開いてください"),
     ("mail.boxes.all", "すべての受信トレイ"),
     ("mail.boxes.inbox", "受信トレイ"),
