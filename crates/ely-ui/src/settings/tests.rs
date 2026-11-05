@@ -7,12 +7,18 @@ use gpui::TestAppContext;
 
 use super::{changed, window::SettingsView};
 
+/// A scratch root: gpui runs pending writes at test end.
 fn installed(cx: &mut TestAppContext) {
+    static ROOT: std::sync::Once = std::sync::Once::new();
+    // SAFETY: set before any test's first write.
+    ROOT.call_once(|| unsafe { std::env::set_var("ELY_DATA_ROOT", tempfile::tempdir().unwrap().keep()) });
+    let shared = ely_platform::settings::Store::shared().unwrap();
+    assert!(shared.path().starts_with(std::env::temp_dir()), "{}", shared.path().display());
     cx.update(|cx| {
         ely_gpui_component::init_for_tests(cx);
         super::install_defaults(cx);
         crate::theme::install(cx);
-        crate::i18n::install(cx);
+        crate::i18n::install_as("en-US", cx);
     });
 }
 
@@ -44,6 +50,17 @@ fn the_interface_text_follows_the_settings(cx: &mut TestAppContext) {
     });
     cx.update(|cx| changed((Shared::default(), None), cx));
     cx.update(|cx| assert_eq!((cx.theme().font_family.clone(), cx.theme().font_scale), (own, 1.0)));
+}
+
+#[gpui::test]
+fn scrollbars_stay_shown_when_chosen(cx: &mut TestAppContext) {
+    installed(cx);
+    cx.update(|cx| assert!(!cx.theme().scrollbars_shown, "they fade by default"));
+    let shown = Shared { always_scrollbars: true, ..Shared::default() };
+    cx.update(|cx| changed((shown, None), cx));
+    cx.update(|cx| assert!(cx.theme().scrollbars_shown));
+    cx.update(|cx| changed((Shared::default(), None), cx));
+    cx.update(|cx| assert!(!cx.theme().scrollbars_shown));
 }
 
 #[gpui::test]
@@ -173,6 +190,22 @@ fn the_latest_text_pick_is_kept_across_windows(cx: &mut TestAppContext) {
     assert_eq!(state(&mut reopened), (true, Some(serde_json::json!(13))), "a skipped write hides no failure");
 }
 
+/// Steps down the list at `row`; the write waits.
+fn choose(shown: &mut gpui::VisualTestContext, row: gpui::Bounds<gpui::Pixels>, steps: usize) {
+    let at = row.center();
+    shown.update(|window, cx| {
+        let down = gpui::MouseDownEvent { position: at, button: gpui::MouseButton::Left, click_count: 1, ..Default::default() };
+        let up = gpui::MouseUpEvent { position: at, button: gpui::MouseButton::Left, click_count: 1, ..Default::default() };
+        window.dispatch_event(gpui::PlatformInput::MouseDown(down), cx);
+        window.dispatch_event(gpui::PlatformInput::MouseUp(up), cx);
+    });
+    for key in std::iter::repeat_n("down", steps).chain(["enter"]) {
+        shown.update(|window, cx| window.draw(cx).clear(cx));
+        let keystroke = gpui::Keystroke::parse(key).unwrap();
+        shown.update(|window, cx| window.dispatch_event(gpui::PlatformInput::KeyDown(gpui::KeyDownEvent { keystroke, is_held: false, prefer_character_input: false }), cx));
+    }
+}
+
 #[gpui::test]
 fn the_two_sided_row_picks_what_is_chosen(cx: &mut TestAppContext) {
     installed(cx);
@@ -183,23 +216,64 @@ fn the_two_sided_row_picks_what_is_chosen(cx: &mut TestAppContext) {
         let mut shown = gpui::VisualTestContext::from_window(settings.into(), cx);
         settings.update(&mut shown, |view, _, _| view.section = "documents".into()).unwrap();
         shown.update(|window, cx| window.draw(cx).clear(cx));
-        let at = shown.debug_bounds("settings-two-sided").expect("the row is shown").center();
-        // No write runs.
-        shown.update(|window, cx| {
-            let down = gpui::MouseDownEvent { position: at, button: gpui::MouseButton::Left, click_count: 1, ..Default::default() };
-            let up = gpui::MouseUpEvent { position: at, button: gpui::MouseButton::Left, click_count: 1, ..Default::default() };
-            window.dispatch_event(gpui::PlatformInput::MouseDown(down), cx);
-            window.dispatch_event(gpui::PlatformInput::MouseUp(up), cx);
-        });
-        for key in std::iter::repeat_n("down", steps).chain(["enter"]) {
-            shown.update(|window, cx| window.draw(cx).clear(cx));
-            let keystroke = gpui::Keystroke::parse(key).unwrap();
-            shown.update(|window, cx| window.dispatch_event(gpui::PlatformInput::KeyDown(gpui::KeyDownEvent { keystroke, is_held: false, prefer_character_input: false }), cx));
-        }
+        let row = shown.debug_bounds("settings-two-sided").expect("the row is shown");
+        choose(&mut shown, row, steps);
         let picked = shown.update(|_, cx| super::picks::waiting(two_sided, cx));
         assert_eq!(picked, Some(serde_json::json!(chosen)), "{app:?}");
         shown.update(|window, _| window.remove_window());
     }
+}
+
+#[gpui::test]
+fn only_doc_offers_the_new_paper(cx: &mut TestAppContext) {
+    installed(cx);
+    for (app, offered) in [(AppId::Doc, true), (AppId::Table, false)] {
+        let settings = cx.add_window(|window, cx| SettingsView::new(app, window, cx));
+        let mut shown = gpui::VisualTestContext::from_window(settings.into(), cx);
+        settings.update(&mut shown, |view, _, _| view.section = "documents".into()).unwrap();
+        shown.update(|window, cx| window.draw(cx).clear(cx));
+        let row = shown.debug_bounds("settings-paper");
+        assert_eq!(row.is_some(), offered, "{app:?}");
+        if let Some(row) = row {
+            // By region, A4, Letter.
+            choose(&mut shown, row, 2);
+            let picked = shown.update(|_, cx| super::picks::waiting(ely_platform::settings::PAPER, cx));
+            assert_eq!(picked, Some(serde_json::json!("letter")));
+        }
+        shown.update(|window, _| window.remove_window());
+    }
+}
+
+#[gpui::test]
+fn the_language_row_lists_each_language_to_pick(cx: &mut TestAppContext) {
+    installed(cx);
+    use ely_platform::settings::{LANGUAGE, LANGUAGES};
+    // System first; each list opens on the waiting pick.
+    for (tag, _) in LANGUAGES {
+        let mut shown = opened(cx);
+        let row = shown.debug_bounds("settings-language").expect("the row is shown");
+        choose(&mut shown, row, 1);
+        assert_eq!(shown.update(|_, cx| super::picks::waiting(LANGUAGE, cx)), Some(serde_json::json!(tag)));
+        shown.update(|window, _| window.remove_window());
+    }
+}
+
+#[gpui::test]
+fn each_language_is_named_in_its_own_words(cx: &mut TestAppContext) {
+    installed(cx);
+    let mut system = Vec::new();
+    for locale in ["en-US", "zh-CN"] {
+        cx.update(|cx| {
+            crate::i18n::install_as(locale, cx);
+            let listed = super::picks::languages(cx);
+            let words: Vec<_> = listed.iter().map(|choice| (choice.value.to_string(), choice.label.to_string())).collect();
+            let own = ely_platform::settings::LANGUAGES.map(|(tag, name)| (tag.to_string(), name.to_string()));
+            assert_eq!(words[1..], own, "{locale}");
+            assert_eq!(words[0].0, "system");
+            system.push(words[0].1.clone());
+        });
+    }
+    assert_eq!(system, ["System", "跟随系统"], "System reads in the interface's language");
 }
 
 #[gpui::test]
@@ -309,4 +383,51 @@ fn only_an_installed_app_offers_a_check_and_a_click_starts_one(cx: &mut TestAppC
         panic!("the check ran and failed: {checked:?}");
     };
     assert!(said.starts_with("cannot fetch http://127.0.0.1:9/none.json"), "{said}");
+}
+
+/// Fake Gits: too old, not Git, failing.
+fn fake_gits(dir: &std::path::Path) -> [std::path::PathBuf; 3] {
+    #[cfg(unix)]
+    {
+        // Committed: one written here races other tests' forks.
+        let _ = dir;
+        let fixture = |name: &str| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/git").join(name);
+        [fixture("git-2.39"), "/bin/echo".into(), fixture("git-fails")]
+    }
+    #[cfg(windows)]
+    {
+        let said = ["@echo git version 2.39.5", "@echo hello", "@echo fatal: version query failed 1>&2\r\n@exit /b 7"];
+        std::array::from_fn(|at| {
+            let path = dir.join(format!("{}.cmd", ["old", "other", "fails"][at]));
+            std::fs::write(&path, said[at]).expect("writes");
+            path
+        })
+    }
+}
+
+#[gpui::test]
+fn a_refused_git_says_why_in_chinese_and_spanish(cx: &mut TestAppContext) {
+    installed(cx);
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let settings = cx.add_window(|window, cx| SettingsView::new(AppId::Tree, window, cx));
+    for (locale, said) in [
+        ("zh-CN", ["早于 2.40", "不是 Git，它报的是", "--version 失败（"]),
+        ("es-ES", ["es anterior a 2.40", "no es Git; responde", "--version falló ("]),
+    ] {
+        cx.update(|cx| crate::i18n::install_as(locale, cx));
+        for (git, said) in fake_gits(dir.path()).iter().zip(said) {
+            settings
+                .update(cx, |view, _, cx| {
+                    let field = view.git.clone().expect("ElyTree's field");
+                    field.update(cx, |field, cx| {
+                        field.set_text(git.display().to_string(), cx);
+                        cx.emit(ely_gpui_component::forms::InputEvent::Submit);
+                    });
+                })
+                .unwrap();
+            cx.run_until_parked();
+            let shown = settings.update(cx, |view, _, _| view.git_error.clone()).unwrap();
+            assert!(shown.as_ref().is_some_and(|shown| shown.contains(said)), "{locale}: {shown:?}");
+        }
+    }
 }

@@ -5,7 +5,7 @@ use std::{
     io::{self, BufReader, BufWriter},
 };
 
-use ely_ipc::{Pack, Unpack, read_frame, write_frame};
+use ely_ipc::{Pack, Unpack, Worded, read_frame, write_frame};
 use ely_pdf_engine::proto::{may, page_box, tag};
 
 mod content;
@@ -28,6 +28,8 @@ struct Doc {
     password: String,
     /// Opened with the owner password, or unprotected.
     owner: bool,
+    /// A PDF; an EPUB only reads.
+    pdf: bool,
     /// What MuPDF warned at open; kept as the repair report.
     warnings: String,
     repair: Option<String>,
@@ -152,6 +154,9 @@ impl Worker {
 
     fn edit(&mut self, kind: u8, ask: &mut Unpack) -> io::Result<Vec<u8>> {
         let id = ask.u64()?;
+        if let Some(answer) = self.read_only(id, kind)? {
+            return Ok(answer);
+        }
         self.guard(id, kind)?;
         let mark = match kind {
             tag::HISTORY => self.record(id)?.mark(),
@@ -213,6 +218,11 @@ impl Worker {
                 let (drop, swap) = (ask.u64()? != 0, ask.str()?);
                 let swap = Some(swap.as_str()).filter(|path| !path.is_empty());
                 self.edited(id, |mupdf, doc| mupdf.place(doc, at, index, t, drop, swap))?
+            }
+            tag::MOVE_TEXT => {
+                let (at, block, expected) = (ask.u64()? as usize, ask.u64()? as usize, ask.str()?);
+                let by = (f32::from_bits(ask.u64()? as u32), f32::from_bits(ask.u64()? as u32));
+                self.edited(id, |mupdf, doc| mupdf.move_text(doc, at, (block, &expected), by))?
             }
             tag::ADD_IMAGE => {
                 let (at, path, mut rect) = (ask.u64()? as usize, ask.str()?, [0f32; 4]);
@@ -334,14 +344,20 @@ impl Worker {
             tag::OPEN => {
                 let open = self.mupdf.open(&ask.str()?)?;
                 let prepared = (|| {
+                    // An EPUB only reads; other kinds MuPDF opens stay out.
+                    match self.mupdf.kind(&open)? {
+                        1 => {}
+                        2 => return Ok((false, false, false)),
+                        _ => return Err(Worded::error(io::ErrorKind::InvalidData, "pdf.error.not_pdf", &[])),
+                    }
                     let locked = self.mupdf.locked(&open)?;
                     // Unprotected files answer 1; owners carry bit 4.
                     let owner = !locked && matches!(self.mupdf.unlock(&open, "")?, access if access == 1 || access & 4 != 0);
                     self.mupdf.journal(&open)?;
-                    Ok::<_, io::Error>((locked, owner))
+                    Ok::<_, io::Error>((locked, owner, true))
                 })();
                 // A failed start releases what MuPDF opened.
-                let (locked, owner) = match prepared {
+                let (locked, owner, pdf) = match prepared {
                     Ok(prepared) => prepared,
                     Err(error) => {
                         self.mupdf.close(open);
@@ -351,13 +367,13 @@ impl Worker {
                 let id = self.next;
                 self.next += 1;
                 let warnings = output::open_warnings();
-                let doc = Doc { open, password: String::new(), owner, warnings, repair: None, found: false, copy: None, steps: Vec::new(), at: 0 };
+                let doc = Doc { open, password: String::new(), owner, pdf, warnings, repair: None, found: false, copy: None, steps: Vec::new(), at: 0 };
                 self.docs.insert(id, doc);
-                if !locked && let Err(error) = self.repair(id) {
+                if pdf && !locked && let Err(error) = self.repair(id) {
                     self.forget(id)?;
                     return Err(error);
                 }
-                log::info!("pdf-worker: opened document {id}, locked {locked}");
+                log::info!("pdf-worker: opened document {id}, locked {locked}, {} documents open", self.docs.len());
                 Ok(Pack::new().u64(id).u64(u64::from(locked)).bytes())
             }
             tag::UNLOCK => {
@@ -435,6 +451,7 @@ impl Worker {
         if let Some(copy) = doc.copy {
             std::fs::remove_file(copy)?;
         }
+        log::info!("pdf-worker: closed document {id}, {} documents open", self.docs.len());
         Ok(())
     }
 }
@@ -461,7 +478,7 @@ fn main() -> io::Result<()> {
             Err(error) => {
                 // Text may quote the document: reply, never log.
                 log::warn!("pdf-worker: request {kind} failed ({:?})", error.kind());
-                write_frame(&mut output, tag::ERR, id, error.to_string().as_bytes())
+                write_frame(&mut output, tag::ERR, id, Worded::wire(&error).as_bytes())
             }
         };
         // An oversized answer is refused; the worker lives.

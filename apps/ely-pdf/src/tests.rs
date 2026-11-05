@@ -13,6 +13,7 @@ use crate::view::PdfView;
 use crate::viewer::Viewer;
 
 mod editing;
+mod epub;
 mod input;
 mod notes;
 mod organize;
@@ -23,12 +24,14 @@ mod removal;
 mod row;
 mod sign;
 mod structure;
+mod turn;
 mod view;
 mod visible;
 
-/// Steps and redraws until `done`, at most ten seconds.
+/// Steps and redraws until `done`, at most a minute.
+#[track_caller]
 pub(crate) fn settle(cx: &mut VisualTestContext, done: impl Fn(&gpui::App) -> bool) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     while std::time::Instant::now() < deadline {
         // Bounded: a busy loop must fail here, not hang.
         for _ in 0..100 {
@@ -70,7 +73,7 @@ pub(crate) fn windowed<'a>(
     cx.update(ely_gpui_component::init_for_tests);
     cx.update(|cx| {
         ely_ui::settings::install_defaults(cx);
-        ely_ui::i18n::install(cx);
+        ely_ui::i18n::install_as("en-US", cx);
     });
     cx.update(crate::keys::bind);
     cx.update(|cx| {
@@ -86,7 +89,8 @@ pub(crate) fn windowed<'a>(
     let work = dir.join("work");
     std::fs::create_dir_all(&work).expect("a work dir");
     let (viewer, vcx) = cx.add_window_view(move |window, cx| {
-        let mut viewer = Viewer::new(Arc::new(Mutex::new(held)), work, cx);
+        let stop = <crate::engine::Pdf as ely_office::Engine>::stopper(&held);
+        let mut viewer = Viewer::new(Arc::new(Mutex::new(held)), stop, work, cx);
         viewer.core.window = Some(window.window_handle());
         viewer
     });

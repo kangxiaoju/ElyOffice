@@ -21,6 +21,7 @@ fn unpack_pushed(body: &[u8]) -> io::Result<(u64, Events)> {
     let review = unpack.u64()?;
     let searched = unpack.u64()?;
     let resized = unpack.u64()?;
+    let dismissed = unpack.u64()?;
     let found = rects_of(&mut unpack)?;
     let menu = Some(unpack.str()?).filter(|menu| !menu.is_empty());
     let faults = (0..unpack.u64()?)
@@ -33,6 +34,9 @@ fn unpack_pushed(body: &[u8]) -> io::Result<(u64, Events)> {
         .map(|_| Ok((unpack.str()?, unpack.str()?)))
         .collect::<io::Result<_>>()?;
     let blocked = (0..unpack.u64()?)
+        .map(|_| Ok((unpack.str()?, unpack.str()?)))
+        .collect::<io::Result<_>>()?;
+    let links = (0..unpack.u64()?)
         .map(|_| unpack.str())
         .collect::<io::Result<_>>()?;
     let tabs = (0..unpack.u64()?)
@@ -66,12 +70,14 @@ fn unpack_pushed(body: &[u8]) -> io::Result<(u64, Events)> {
         review,
         searched,
         resized,
+        dismissed,
         found,
         menu,
         faults,
         fonts,
         states,
         blocked,
+        links,
         a11y,
         tabs,
         cell,

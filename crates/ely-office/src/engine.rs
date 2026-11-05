@@ -11,6 +11,9 @@ use gpui::{App, Context, Entity, FocusHandle, Window};
 
 use crate::Host;
 
+/// Ends a stuck worker; runs outside its lock.
+pub type Stop = Arc<dyn Fn() -> io::Result<()> + Send + Sync>;
+
 /// Where a load starts.
 pub enum Load<'a, I> {
     /// A file and its password, empty for none.
@@ -48,12 +51,13 @@ pub trait Engine: Sized + 'static {
     }
     /// The undo history as a mark to compare.
     fn history(worker: &mut Self::Worker, doc: &Self::Doc) -> io::Result<String>;
-    /// Writes `doc` as `format` to `path`.
+    /// Writes `doc` as `format` to `path`; `closing` ends open edits.
     fn write(
         worker: &mut Self::Worker,
         doc: &Self::Doc,
         path: &Path,
         format: &str,
+        closing: bool,
     ) -> io::Result<()>;
     /// A copy of `doc` at `path`; `doc` stays.
     fn snapshot(_worker: &mut Self::Worker, _doc: &Self::Doc, _path: &Path, format: &str) -> io::Result<()> {
@@ -62,8 +66,14 @@ pub trait Engine: Sized + 'static {
     fn close(worker: &mut Self::Worker, doc: Self::Doc) -> io::Result<()>;
     /// A closing view's images, for the shell to free.
     fn retire(view: &Entity<Self::View>, cx: &mut App) -> ely_gpui_component::primitives::Retired;
+    /// Its tab left the screen; queued drawing stops.
+    fn hide(_view: &Entity<Self::View>, _cx: &mut App) {}
     /// Why the worker ended, if it did (§6.3).
     fn ended(_worker: &mut Self::Worker) -> Option<String> {
+        None
+    }
+    /// Ends the worker from outside its lock; None cannot.
+    fn stopper(_worker: &Self::Worker) -> Option<Stop> {
         None
     }
     /// A fresh worker in place of an ended one.

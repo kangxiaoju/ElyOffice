@@ -15,13 +15,15 @@ mod table;
 mod worker;
 
 pub use client::{
-    A11y, Cell, Doc, Events, Function, MIXED, Mark, Mouse, Pdf, Rect, Request, Sheet, Sheets, Tile,
+    A11y, Cell, Damaged, Doc, Events, Feed, Function, MIXED, Mark, Mouse, Pdf, Rect, Request, Sheet, Sheets, Tile,
     Worker, install_dir, is_nothing, is_stale, templates,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub use client::test_install;
 #[cfg(feature = "view")]
 pub use view::{
-    CONTEXT, Copy, Cut, Geom, Layout, LokError, LokView, Paste, Reported, ZOOM_STEPS, notch,
-    SCHEME, Zoomed, init, layout, paper, read_off,
+    CONTEXT, Closed, Copy, Cut, Geom, Linked, Layout, LokError, LokView, Paste, Reported, ZOOM_STEPS, notch,
+    SCHEME, Zoomed, behind, init, layout, paper, read_off,
 };
 #[cfg(feature = "view")]
 mod view;
@@ -34,3 +36,5 @@ pub use ipc::STALE;
 pub use ipc::file_url_of as file_url;
 pub use ipc::path_of_file_url as file_path;
 pub use worker::run as worker_run;
+#[cfg(windows)]
+pub use worker::stdin::private as worker_stdin;

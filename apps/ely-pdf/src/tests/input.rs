@@ -68,7 +68,7 @@ fn two_tabs<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> (Entity<Vi
 /// Opens find on `tab` and searches `query` at once.
 fn find_in(cx: &mut VisualTestContext, viewer: &Entity<Viewer>, tab: u64, query: &str) {
     cx.update(|window, app| viewer.update(app, |viewer, cx| {
-        viewer.core.active = Some(tab);
+        viewer.core.set_active(Some(tab));
         viewer.open_find(window, cx);
         let field = viewer.find.as_ref().expect("open").query.clone();
         field.update(cx, |field, cx| field.set_text(query, cx));
@@ -86,7 +86,7 @@ fn a_hit_found_late_never_moves_another_tab() {
     let (viewer, cx, first, second) = two_tabs(&mut cx, dir.path());
     find_in(cx, &viewer, first, "alpha");
     // Before the batch comes back, the reader turns to B.
-    cx.update(|_, app| viewer.update(app, |viewer, _| viewer.core.active = Some(second)));
+    cx.update(|_, app| viewer.update(app, |viewer, _| viewer.core.set_active(Some(second))));
     settle(cx, |app| viewer.read(app).find.as_ref().is_some_and(|find| find.done == 3));
     let (a, b) = (view_of(cx, &viewer, first), view_of(cx, &viewer, second));
     let state = cx.update(|_, app| (a.read(app).chosen, b.read(app).current));
@@ -202,9 +202,9 @@ fn never_bare(cx: &mut VisualTestContext, view: &Entity<PdfView>) -> (gpui::Subs
     (watch, bare)
 }
 
-/// Only new tiles drawn, and none on its way.
+/// The screen whole with new tiles, none on its way.
 fn repainted(view: &PdfView) -> bool {
-    view.backdrop.is_empty() && !view.painting && !view.tiles.is_empty()
+    view.filling.is_none() && !view.painting && !view.tiles.is_empty()
 }
 
 fn note() -> ely_pdf_engine::NewAnnot {
@@ -226,7 +226,7 @@ fn an_edit_keeps_the_page_drawn_until_its_repaint_lands() {
     settle(cx, |app| repainted(view.read(app)));
     let before: Vec<_> = cx.update(|_, app| view.read(app).tiles.values().cloned().collect());
     let (_watch, bare) = never_bare(cx, &view);
-    cx.update(|_, app| view.update(app, |view, cx| view.annotate("adding a note", vec![note()], cx)));
+    cx.update(|_, app| view.update(app, |view, cx| view.annotate("pdf.doing.add_note", vec![note()], cx)));
     settle(cx, |app| view.read(app).edited == 1 && repainted(view.read(app)));
     assert!(!bare.get(), "the page never goes blank");
     let after = cx.update(|_, app| view.read(app).tiles.values().cloned().collect::<Vec<_>>());
@@ -268,7 +268,7 @@ fn an_edit_past_the_first_hundred_sizes_keeps_the_page_drawn() {
     let view = shown(cx, &viewer);
     settle(cx, |app| view.read(app).sizes[100] == (612.0, 900.0) && repainted(view.read(app)));
     let (_watch, bare) = never_bare(cx, &view);
-    cx.update(|_, app| view.update(app, |view, cx| view.annotate("adding a note", vec![note()], cx)));
+    cx.update(|_, app| view.update(app, |view, cx| view.annotate("pdf.doing.add_note", vec![note()], cx)));
     settle(cx, |app| view.read(app).edited == 1 && repainted(view.read(app)));
     assert!(!bare.get(), "the page never goes blank");
 }
@@ -286,7 +286,7 @@ fn an_edit_on_page_101_keeps_its_measured_size_and_its_tiles() {
     settle(cx, |app| view.read(app).current == 100 && repainted(view.read(app)));
     let (_watch, bare) = never_bare(cx, &view);
     let late = ely_pdf_engine::NewAnnot { page: 100, ..note() };
-    cx.update(|_, app| view.update(app, |view, cx| view.annotate("adding a note", vec![late], cx)));
+    cx.update(|_, app| view.update(app, |view, cx| view.annotate("pdf.doing.add_note", vec![late], cx)));
     settle(cx, |app| view.read(app).edited == 1 && repainted(view.read(app)));
     assert!(!bare.get(), "page 101 never goes blank");
     assert_eq!(cx.update(|_, app| view.read(app).sizes[100]), (612.0, 900.0), "its measured size holds");
@@ -304,13 +304,13 @@ fn old_tiles_are_painted_and_freed_with_their_tab() {
         view.update(app, |view, cx| {
             let keys: Vec<_> = view.tiles.keys().copied().collect();
             view.failed.extend(keys);
-            view.keep_all();
+            view.retire_tiles();
             cx.notify();
             view.painted
         })
     });
     cx.run_until_parked();
-    let (painted, kept) = cx.update(|_, app| (view.read(app).painted, view.read(app).backdrop.len()));
+    let (painted, kept) = cx.update(|_, app| (view.read(app).painted, view.read(app).whole.values().map(Vec::len).sum::<usize>()));
     // Old tiles cover what shows of the page.
     let shown = cx.update(|window, app| {
         let read = view.read(app);
@@ -324,7 +324,7 @@ fn old_tiles_are_painted_and_freed_with_their_tab() {
     });
     assert!(kept > 0 && painted - before >= shown * 0.99, "{kept} old tiles painted {} of {shown}", painted - before);
     cx.update(|_, app| view.update(app, |view, _| view.retire_all()));
-    assert!(cx.update(|_, app| view.read(app).backdrop.is_empty()), "closing hands every old tile over");
+    assert!(cx.update(|_, app| view.read(app).whole.is_empty()), "closing hands every old tile over");
 }
 
 #[test]
@@ -337,7 +337,7 @@ fn an_edit_keeps_page_pictures_until_they_repaint() {
     let old = cx.update(|_, app| view.read(app).picture(0).expect("a picture"));
     // A picture on its way holds back the repaint.
     cx.update(|_, app| view.update(app, |view, _| view.thumbing = true));
-    cx.update(|_, app| view.update(app, |view, cx| view.annotate("adding a note", vec![note()], cx)));
+    cx.update(|_, app| view.update(app, |view, cx| view.annotate("pdf.doing.add_note", vec![note()], cx)));
     settle(cx, |app| view.read(app).edited == 1 && repainted(view.read(app)));
     // Dropped from the atlas, it returns only if drawn.
     cx.update(|window, _| window.drop_image(old.clone())).expect("drops");

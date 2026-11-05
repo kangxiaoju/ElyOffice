@@ -196,6 +196,12 @@ impl Root {
         });
     }
 
+    /// An unopened output's words; the caller logs it.
+    pub(crate) fn open_failed(&mut self, error: &std::io::Error, cx: &mut Context<Self>) {
+        let said = crate::i18n::text(cx, "toast.open_failed", &[("error", &crate::i18n::error(cx, error))]);
+        self.toast(said, Severity::Danger, cx);
+    }
+
     /// The toasts on show: title and severity, oldest first.
     pub fn toasts(&self, cx: &gpui::App) -> Vec<(SharedString, Option<Severity>)> {
         self.toaster.read(cx).shown()
@@ -219,11 +225,9 @@ impl Root {
                 cx.spawn(async move |cx| {
                     let opened = cx.background_spawn(async move { view(&path) }).await;
                     if let Err(error) = opened {
-                        log::error!("apps: the output did not open: {error}");
-                        cx.update(|cx| {
-                            let said = crate::i18n::text(cx, "toast.open_failed", &[("error", &error.to_string())]);
-                            root.update(cx, |root, cx| root.toast(said, Severity::Danger, cx)).ok();
-                        });
+                        // Logged even if the window has closed.
+                        log::error!("apps: the output did not open: {}", ely_ipc::Worded::logged(&error));
+                        cx.update(|cx| root.update(cx, |root, cx| root.open_failed(&error, cx)).ok());
                     }
                 })
                 .detach();
@@ -238,9 +242,9 @@ impl Root {
         cx.spawn(async move |root, cx| {
             let opened = cx.background_spawn(async move { ely_platform::apps::open(app, &[]) }).await;
             if let Err(error) = opened {
-                log::error!("apps: {} did not open: {error}", app.name());
+                log::error!("apps: {} did not open: {}", app.name(), ely_ipc::Worded::logged(&error));
                 root.update(cx, |root, cx| {
-                    let said = crate::i18n::text(cx, "menu.app.switch_failed", &[("app", app.name()), ("error", &error.to_string())]);
+                    let said = crate::i18n::text(cx, "menu.app.switch_failed", &[("app", app.name()), ("error", &crate::i18n::error(cx, &error))]);
                     root.toast(said, Severity::Danger, cx);
                 })
                 .ok();
@@ -272,10 +276,11 @@ impl Render for Root {
             None => Shell::new(self.app.name(), &self.focus).into_any_element(),
         };
         let has = |id| self.file.iter().any(|command| command.id == id);
-        // Text without its own color, overlays too, takes the theme's.
+        // Unstyled text, overlays too, takes the theme's.
         let frame = div()
             .size_full()
             .text_color(cx.theme().colors.fg)
+            .font_family(cx.theme().font_family.clone())
             .key_context(commands::CONTEXT)
             .on_action(cx.listener(|this, _: &New, _, cx| this.attempt("file.new", cx)))
             .on_action(cx.listener(|this, _: &Open, _, cx| this.attempt("file.open", cx)))
@@ -369,7 +374,7 @@ mod tests {
         cx.update(|cx| {
             ely_gpui_component::init_for_tests(cx);
             crate::settings::install_defaults(cx);
-            crate::i18n::install(cx);
+            crate::i18n::install_as("en-US", cx);
         });
         let window = cx.add_window(|_, cx| Saves(cx.focus_handle(), 0));
         let (saves, root) = window
@@ -391,13 +396,19 @@ mod tests {
         assert_eq!(cx.update(|cx| root.read(cx).toasts(cx).len()), 1, "the reason shows");
     }
 
-    type Seen = std::rc::Rc<std::cell::Cell<Option<gpui::Hsla>>>;
+    type Seen = std::rc::Rc<std::cell::RefCell<Option<(gpui::Hsla, gpui::SharedString)>>>;
 
-    /// Records its drawn text color, and an overlay's.
+    /// Records its drawn text color and font, and an overlay's.
     struct Inked(Seen, Seen);
 
     fn ink(seen: Seen) -> impl IntoElement {
-        gpui::canvas(move |_, window, _| seen.set(Some(window.text_style().color)), |_, _, _, _| {})
+        gpui::canvas(
+            move |_, window, _| {
+                let style = window.text_style();
+                *seen.borrow_mut() = Some((style.color, style.font_family));
+            },
+            |_, _, _, _| {},
+        )
     }
 
     impl Render for Inked {
@@ -410,12 +421,12 @@ mod tests {
     }
 
     #[gpui::test]
-    fn text_without_a_color_takes_the_theme_overlays_too(cx: &mut TestAppContext) {
+    fn unstyled_text_takes_the_theme_overlays_too(cx: &mut TestAppContext) {
         use ely_gpui_component::theme::{ActiveTheme as _, Mode, Theme};
         cx.update(|cx| {
             ely_gpui_component::init_for_tests(cx);
             crate::settings::install_defaults(cx);
-            crate::i18n::install(cx);
+            crate::i18n::install_as("en-US", cx);
             Theme::set_mode_now(Mode::Dark, cx);
         });
         let (page, overlay) = (Seen::default(), Seen::default());
@@ -431,9 +442,38 @@ mod tests {
         let cx = &mut gpui::VisualTestContext::from_window(window.into(), cx);
         cx.update(|window, _| window.refresh());
         cx.run_until_parked();
-        let fg = cx.update(|_, cx| cx.theme().colors.fg);
+        let (fg, family) = cx.update(|_, cx| (cx.theme().colors.fg, cx.theme().font_family.clone()));
         assert_ne!(fg, gpui::black(), "dark text would hide on a dark page");
-        assert_eq!(page.get(), Some(fg), "the page");
-        assert_eq!(overlay.get(), Some(fg), "an overlay over it");
+        assert_ne!(family.as_ref(), ".SystemUIFont", "the theme names its own font");
+        let want = Some((fg, family));
+        assert_eq!(*page.borrow(), want, "the page");
+        assert_eq!(*overlay.borrow(), want, "an overlay over it");
+    }
+
+    #[gpui::test]
+    fn an_output_whose_app_went_says_so_in_chinese_and_spanish(cx: &mut TestAppContext) {
+        // An installed one would start for real.
+        if ely_platform::apps::installed(ely_platform::AppId::Pdf) {
+            return eprintln!("SKIP: ElyPDF is installed here");
+        }
+        // The check passed; at launch the app is gone.
+        let gone = ely_platform::apps::open(ely_platform::AppId::Pdf, &[]).expect_err("no ElyPDF");
+        cx.update(|cx| {
+            ely_gpui_component::init_for_tests(cx);
+            crate::settings::install_defaults(cx);
+            crate::i18n::install_as("en-US", cx);
+        });
+        let window = cx.add_window(|_, cx| Saves(cx.focus_handle(), 0));
+        let root = window
+            .update(cx, |_, window, cx| super::tool_root(ely_platform::AppId::Tree, cx.entity().into(), Vec::new(), window, cx))
+            .unwrap();
+        for (locale, said) in [("zh-CN", "ElyPDF 没有安装"), ("es-ES", "ElyPDF no está instalado")] {
+            cx.update(|cx| crate::i18n::install_as(locale, cx));
+            let toasts = cx.update(|cx| {
+                root.update(cx, |root, cx| root.open_failed(&gone, cx));
+                root.read(cx).toasts(cx)
+            });
+            assert!(toasts.iter().any(|(text, _)| text.contains(said)), "{locale}: {toasts:?}");
+        }
     }
 }

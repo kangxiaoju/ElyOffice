@@ -39,9 +39,11 @@ pub struct Desk {
     pub recent: Vec<PathBuf>,
     pub recent_file: PathBuf,
     /// A file asked to open at a line and column.
-    pub going: Option<(PathBuf, (usize, usize))>,
+    pub going: Option<(u64, (usize, usize))>,
     /// The path each tab last put in the recent list.
     pub remembered: HashMap<u64, PathBuf>,
+    /// Background list writes take turns.
+    pub recording: Arc<Mutex<()>>,
     pub(crate) side: Entity<crate::side::Side>,
     pub watcher: Option<notify::RecommendedWatcher>,
     /// The folders the watcher covers.
@@ -106,6 +108,7 @@ impl Host for Desk {
     /// A closed tab's unsaved text is gone for good (§6.2).
     fn tab_closed(&mut self, tab: &ely_office::Tab<Self::Extra, Mark>, cx: &mut Context<Self>) {
         let path = tab.session.path().map(std::path::Path::to_path_buf);
+        self.remembered.remove(&tab.id);
         self.drop_slot(&tab.extra.slot, path, tab.name.to_string(), cx);
     }
 
@@ -143,11 +146,10 @@ impl Host for Desk {
                 view.update(cx, |view, cx| view.moved(folder.to_path_buf(), cx));
             }
             self.track_recent(id, &path, cx);
-            let real = dunce::canonicalize(&path).ok();
             if self
                 .going
                 .as_ref()
-                .is_some_and(|(file, _)| Some(file) == real.as_ref())
+                .is_some_and(|(tab, _)| *tab == id)
                 && let Some((_, at)) = self.going.take()
             {
                 self.reveal_later(view.clone(), at, cx);
@@ -192,7 +194,7 @@ pub(crate) fn open_in(
         let this = cx.entity();
         let side = cx.new(|cx| crate::side::Side::new(&this, window, cx));
         Desk {
-            core: Core::new(Arc::new(Mutex::new(())), work, cx),
+            core: Core::new(Arc::new(Mutex::new(())), <Mark as ely_office::Engine>::stopper(&()), work, cx),
             naming: None,
             exporting: None,
             folder: None,
@@ -201,6 +203,7 @@ pub(crate) fn open_in(
             recent_file,
             going: None,
             remembered: HashMap::new(),
+            recording: Arc::default(),
             side,
             watcher: None,
             watched: Vec::new(),
@@ -378,7 +381,7 @@ impl Desk {
         let view = self.active_view()?;
         let (line, column) = view.read(cx).document().read(cx).caret(cx);
         let (line, column) = ((line + 1).to_string(), (column + 1).to_string());
-        Some(text(cx, "mark.caret", &[("line", &line), ("column", &column)]).into())
+        Some(text(cx, "mark.caret", &[("line", &line), ("column", &column)]))
     }
 
     fn status(&self, cx: &mut Context<Self>) -> StatusBar {

@@ -4,11 +4,14 @@ use super::*;
 
 mod analysis;
 mod borders;
+mod backslash;
 mod by_address;
+mod cell_edit;
 mod cell_looks;
 mod charts;
 mod check;
 mod commands;
+mod docx;
 mod filter;
 mod fonts;
 mod format;
@@ -16,11 +19,16 @@ mod formula;
 mod handouts;
 #[cfg(windows)]
 mod handles;
+mod booleans;
 mod independent;
 mod kept;
+mod many;
+mod pivot;
+mod spill;
 pub(crate) mod input;
 mod latency;
 mod layout;
+mod links;
 mod media;
 mod menus;
 mod motion;
@@ -28,12 +36,17 @@ mod output;
 mod paint;
 mod playlist;
 mod print;
+mod profile;
 mod refs;
+mod r_macros;
 mod roundtrip;
 mod rules;
+mod seam;
 mod sheet;
+mod trigger;
 pub(crate) mod show;
 mod slides;
+mod stop;
 mod tools;
 mod word;
 mod workbook;
@@ -43,7 +56,7 @@ const PINNED_BUILD: &str = "8221e31";
 
 /// The pinned build, or None when absent.
 pub(crate) fn install() -> Option<PathBuf> {
-    install_dir().ok()
+    crate::test_install()
 }
 
 /// Ends a stuck worker by its process id.
@@ -119,6 +132,9 @@ pub(crate) fn click(worker: &mut Worker, doc: &Doc, x: i32, y: i32) {
     }
 }
 
+/// A wait for a condition fails only past this.
+pub(crate) const HANG: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Polls past `from` until `done` or `wait`; rects pile up.
 pub(crate) fn poll_until(
     worker: &mut Worker,
@@ -133,6 +149,7 @@ pub(crate) fn poll_until(
         all: false,
         states: Vec::new(),
         blocked: Vec::new(),
+        links: Vec::new(),
         ..from.clone()
     };
     loop {
@@ -142,15 +159,18 @@ pub(crate) fn poll_until(
         let mut rects = std::mem::take(&mut seen.rects);
         let mut states = std::mem::take(&mut seen.states);
         let mut blocked = std::mem::take(&mut seen.blocked);
+        let mut links = std::mem::take(&mut seen.links);
         let all = seen.all || batch.all;
         rects.extend(batch.rects.iter().copied());
         states.extend(batch.states.iter().cloned());
         blocked.extend(batch.blocked.iter().cloned());
+        links.extend(batch.links.iter().cloned());
         seen = Events {
             rects,
             all,
             states,
             blocked,
+            links,
             ..batch
         };
         if done(&seen) || std::time::Instant::now() >= deadline {

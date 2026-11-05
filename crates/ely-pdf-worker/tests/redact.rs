@@ -5,7 +5,7 @@ use std::path::Path;
 
 use ely_pdf_engine::{
     Cleaning, Doc, NewAnnot, OcrLine, Region, Shape, Worker,
-    sample::{Extras, pdf_with},
+    sample::{Extras, one_page, pdf_with},
 };
 
 fn worker() -> Worker {
@@ -39,6 +39,22 @@ fn reopen(path: &Path) -> (Worker, Doc) {
 }
 
 #[test]
+fn empty_marked_content_outside_the_region_stays() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string();
+    let content = "/Artifact BMC EMC BT /F1 18 Tf 72 700 Td (Hello) Tj ET BT /F1 18 Tf 72 400 Td (Other) Tj ET";
+    let path = dir.path().join("tagged.pdf");
+    std::fs::write(&path, one_page("", " /Resources << /Font << /F1 5 0 R >> >>", content, &[font])).expect("writes");
+    let (mut worker, doc) = reopen(&path);
+    let other = worker.text_blocks(doc, 0).expect("blocks").into_iter().find(|b| b.text == "Other").expect("other").rect;
+    let out = dir.path().join("out.pdf");
+    worker.redact(doc, &[Region { page: 0, rect: other }], &out).expect("removes");
+    let bytes = std::fs::read(&out).expect("reads");
+    let count = |what: &str| bytes.windows(what.len()).filter(|w| *w == what.as_bytes()).count();
+    assert_eq!((count("/Artifact"), count("Other")), (1, 0));
+}
+
+#[test]
 fn removed_text_is_gone_from_the_file_and_the_rest_stays() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let (mut worker, mut doc) = opened(&dir.path().join("doc.pdf"));
@@ -69,9 +85,9 @@ fn a_picture_under_a_region_loses_those_pixels() {
     worker.redact(doc, &[Region { page: 0, rect: [72.0, 242.0, 122.0, 292.0] }], &out).expect("removes");
     let (mut other, written) = reopen(&out);
     let left = other.render(written, 0, (1.0, 0), [124, 244, 46, 46]).expect("draws").bgra;
-    assert!(left.chunks_exact(4).any(|p| p[0] > 100 || p[1] > 100 || p[2] > 100), "the right half keeps its colour");
+    assert!(left.as_chunks::<4>().0.iter().any(|p| p[0] > 100 || p[1] > 100 || p[2] > 100), "the right half keeps its colour");
     let gone = other.render(written, 0, (1.0, 0), [74, 244, 46, 46]).expect("draws").bgra;
-    assert!(gone.chunks_exact(4).all(|p| p[0] < 40 && p[1] < 40 && p[2] < 40), "the left half is black");
+    assert!(gone.as_chunks::<4>().0.iter().all(|p| p[0] < 40 && p[1] < 40 && p[2] < 40), "the left half is black");
 }
 
 #[test]
@@ -168,7 +184,7 @@ fn a_shape_touching_a_region_goes_whole() {
     assert_eq!(report.objects, 0);
     let (mut other, read) = reopen(&out);
     let right = other.render(read, 0, (1.0, 0), [200, 55, 90, 30]).expect("draws").bgra;
-    assert!(right.chunks_exact(4).all(|p| p[2] < 200 || p[1] > 200), "no red left past the box");
+    assert!(right.as_chunks::<4>().0.iter().all(|p| p[2] < 200 || p[1] > 200), "no red left past the box");
 }
 
 #[test]

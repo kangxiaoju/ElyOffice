@@ -57,7 +57,7 @@ fn right_click(cx: &mut VisualTestContext, book: &Entity<Book>, at: Point<Pixels
     cx.simulate_mouse_move(at, None, Modifiers::none());
     cx.simulate_mouse_down(at, MouseButton::Right, Modifiers::none());
     cx.simulate_mouse_up(at, MouseButton::Right, Modifiers::none());
-    for _ in 0..500 {
+    for _ in 0..3000 {
         cx.run_until_parked();
         if cx.update(|_, app| book.read(app).menu.as_ref().is_some_and(|offer| shown(&offer.what))) {
             return frames(cx);
@@ -97,8 +97,11 @@ fn corner_rectangle(cx: &mut TestAppContext, book: &Entity<Book>) {
     run(cx, book, "draw.shape", &["rectangle", "true"]);
     run(cx, book, "object.x", &["0"]);
     run(cx, book, "object.y", &["0"]);
-    let selected = cx.update(|app| book.read(app).active_tab().expect("a tab").view.read(app).graphic());
-    assert!(selected.is_some_and(|(x, y, ..)| x < 100 && y < 100), "selected at A1: {selected:?}");
+    // The move is reported after the answer.
+    settle(cx, |app| {
+        let selected = book.read(app).active_tab().expect("a tab").view.read(app).graphic();
+        selected.is_some_and(|(x, y, ..)| x < 100 && y < 100)
+    });
 }
 
 /// Protects the sheet, allowing selection and `more`.

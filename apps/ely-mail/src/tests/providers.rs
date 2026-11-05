@@ -1,6 +1,6 @@
 use std::{io, sync::Arc};
 
-use ely_mail_engine::{Auth, Checked, Error, Security, oauth};
+use ely_mail_engine::{Auth, Checked, Error, Security, Stage, oauth};
 use ely_ui::laid::LaidOut;
 use gpui::{Modifiers, TestAppContext, TestDispatcher};
 
@@ -77,6 +77,24 @@ fn a_build_without_a_client_id_says_so() {
 }
 
 #[test]
+fn a_quiet_server_is_named_in_the_readers_language() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cx = TestAppContext::single();
+    let (_, cx) = window(&mut cx, dir.path(), Keys::default());
+    let said = |cx: &mut gpui::VisualTestContext, stage| cx.update(|_, app| failure(&Error::Timeout(stage), app));
+    assert_eq!(said(cx, Stage::LoggingIn).as_ref(), "no answer while logging in");
+    assert!(said(cx, Stage::StartingTls).contains("proxy"), "the proxy is named");
+    cx.update(|_, app| ely_ui::i18n::install_as("zh-CN", app));
+    assert_eq!(said(cx, Stage::LoggingIn).as_ref(), "登录时没有回应");
+    let tls = said(cx, Stage::StartingTls);
+    assert!(tls.contains("代理") && !tls.chars().any(|c| c.is_ascii_alphabetic()), "{tls}");
+    for stage in [Stage::ConnectingThroughProxy, Stage::WaitingForGreeting, Stage::SavingSentCopy, Stage::LoggingOut] {
+        let words = said(cx, stage);
+        assert!(!words.chars().any(|c| c.is_ascii_alphabetic()), "{stage}: {words}");
+    }
+}
+
+#[test]
 fn outlooks_held_account_says_what_to_do() {
     let dir = tempfile::tempdir().unwrap();
     let mut cx = TestAppContext::single();
@@ -86,7 +104,14 @@ fn outlooks_held_account_says_what_to_do() {
     let (held, other) = cx.update(|_, app| (failure(&held, app), failure(&other, app)));
     assert!(held.starts_with("Outlook took the sign-in"), "{held}");
     assert!(held.contains("(NO User is authenticated but not connected.)"), "{held}");
-    assert!(held.contains("outlook.live.com"), "{held}");
+    assert!(held.contains("outlook.live.com") && held.contains("Let devices and apps use IMAP"), "{held}");
+    let words = "535 Authentication unsuccessful, SmtpClientAuthentication is disabled for the Mailbox. Visit https://aka.ms/smtp_auth_disabled for more information.";
+    let off = cx.update(|_, app| failure(&Error::Rejected(words.into()), app));
+    assert!(off.starts_with("Microsoft has turned off SMTP sign-in") && off.contains(words), "{off}");
+    assert!(held.contains("account.live.com/activity") && held.contains("This was me"), "{held}");
+    cx.update(|_, app| ely_ui::i18n::install_as("zh-CN", app));
+    let held = cx.update(|_, app| failure(&Error::Rejected("NO User is authenticated but not connected.".into()), app));
+    assert!(held.contains("转发和 IMAP") && held.contains("account.live.com/activity") && held.contains("这是我"), "{held}");
     assert_eq!(other.as_ref(), "the server refused the sign-in: NO LOGIN failed.");
 }
 
@@ -104,7 +129,7 @@ fn a_refused_gmail_password_says_what_to_do() {
             (Kind::Gmail, Some(rejected()), None, true),
             (Kind::Gmail, None, Some(rejected()), true),
             (Kind::ICloud, Some(rejected()), None, false),
-            (Kind::Gmail, Some(Error::Timeout("login")), None, false),
+            (Kind::Gmail, Some(Error::Timeout(Stage::LoggingIn)), None, false),
             (Kind::Gmail, Some(Error::Connect(refused())), None, false),
         ];
         for (kind, incoming, outgoing, advised) in cases {

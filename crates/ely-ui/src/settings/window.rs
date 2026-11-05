@@ -12,7 +12,7 @@ use ely_gpui_component::{
 use ely_platform::{
     AppId,
     settings::{
-        APPEARANCE, AUTHOR, Appearance, CHECK_UPDATES, LANGUAGE, Language, MOTION, Motion, OMARCHY_SYNC, Store, UI_FONT, word,
+        ALWAYS_SCROLLBARS, APPEARANCE, AUTHOR, Appearance, CHECK_UPDATES, MOTION, Motion, OMARCHY_SYNC, Store, UI_FONT, word,
     },
 };
 use gpui::{
@@ -62,8 +62,8 @@ pub struct SettingsView {
     /// The latest author commit; older writes are dropped.
     author_asked: Arc<AtomicU64>,
     ui_font: Entity<TextInput>,
-    git: Option<Entity<TextInput>>,
-    git_error: Option<SharedString>,
+    pub(super) git: Option<Entity<TextInput>>,
+    pub(super) git_error: Option<SharedString>,
     /// The latest Git commit; older checks are dropped.
     git_asked: Arc<AtomicU64>,
     pub(super) diagnostics: super::diagnostics::Diagnostics,
@@ -186,8 +186,8 @@ impl SettingsView {
                     return log::info!("settings: Git check {asked} was overtaken");
                 }
                 this.git_error = checked.err().map(|error| {
-                    log::warn!("settings: Git setting refused: {error}");
-                    text(cx, "settings.git.bad", &[("path", &typed), ("error", &error.to_string())])
+                    log::warn!("settings: Git setting refused: {}", ely_ipc::Worded::logged(&error));
+                    text(cx, "settings.git.bad", &[("path", &typed), ("error", &crate::i18n::error(cx, &error))])
                 });
                 cx.notify();
             })
@@ -226,11 +226,7 @@ impl SettingsView {
             };
             set(APPEARANCE, word(&Appearance::ALL, &chosen).into(), cx);
         });
-        let language = choices("settings-language", &Language::ALL, &shared.language, |choice, cx| match choice {
-            Language::System => text(cx, "settings.language.system", &[]),
-            Language::English => "English".into(),
-            Language::Chinese => "简体中文".into(),
-        }, LANGUAGE, cx);
+        let language = div().debug_selector(|| "settings-language".into()).w_full().max_w_64().child(super::picks::language(shared.language, cx));
         let motion = choices("settings-motion", &Motion::ALL, &shared.motion, |choice, cx| match choice {
             Motion::System => text(cx, "settings.motion.system", &[]),
             Motion::Reduced => text(cx, "settings.motion.reduce", &[]),
@@ -245,7 +241,12 @@ impl SettingsView {
             )
             .row(SettingsRow::new(text(cx, "settings.motion", &[])).control(motion))
             .row(SettingsRow::new(text(cx, "settings.font", &[])).control(self.font(cx)))
-            .row(SettingsRow::new(text(cx, "settings.text.size", &[])).control(super::picks::text_size(shared.ui_text_size, cx)));
+            .row(SettingsRow::new(text(cx, "settings.text.size", &[])).control(super::picks::text_size(shared.ui_text_size, cx)))
+            .row(SettingsRow::new(text(cx, "settings.scrollbars", &[])).control(
+                Switch::new("settings-scrollbars", shared.always_scrollbars)
+                    .name(text(cx, "settings.scrollbars", &[]))
+                    .on_change(|on, _, cx| set(ALWAYS_SCROLLBARS, Value::Bool(on), cx)),
+            ));
         let mut section = match crate::updates::updater(cx) {
             Some(updates) => self.updates(section, &updates.read(cx).checked, shared.check_updates, cx),
             // A dev build does not update itself.
@@ -305,7 +306,7 @@ impl SettingsView {
                 let autosave = Switch::new("settings-autosave", super::switches::on(super::switches::AUTOSAVE, cx))
                     .name(text(cx, "settings.autosave", &[]))
                     .on_change(|on, _, cx| super::switches::set(super::switches::AUTOSAVE, on, cx));
-                section
+                let section = section
                     .row(
                         SettingsRow::new(text(cx, "settings.author", &[]))
                             .description(text(cx, "settings.author.hint", &[]))
@@ -320,9 +321,17 @@ impl SettingsView {
                         SettingsRow::new(text(cx, "settings.zoom", &[]))
                             .description(text(cx, "settings.zoom.hint", &[]))
                             .control(div().w_full().max_w_64().child(super::picks::doc_zoom(current(cx).doc_zoom, cx))),
-                    )
-                    .row(printing)
-                    .into_any_element()
+                    );
+                // Only ElyDoc makes paged documents.
+                let section = match self.app {
+                    AppId::Doc => section.row(
+                        SettingsRow::new(text(cx, "settings.paper", &[]))
+                            .description(text(cx, "settings.paper.hint", &[]))
+                            .control(div().debug_selector(|| "settings-paper".into()).w_full().max_w_64().child(super::picks::paper(current(cx).paper, cx))),
+                    ),
+                    _ => section,
+                };
+                section.row(printing).into_any_element()
             }
             "git" => {
                 let field = self.git.clone().expect("the git section is ElyTree's");

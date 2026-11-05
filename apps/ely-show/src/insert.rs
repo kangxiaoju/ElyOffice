@@ -116,7 +116,7 @@ pub fn bind(root: Div, cx: &mut Context<Deck>) -> Div {
 impl Deck {
     /// Runs an object command; the next read shows the result.
     pub fn object_command(&mut self, id: &str, values: &[&str], cx: &mut Context<Self>) {
-        let Some(tab) = self.core.active else {
+        let Some(tab) = self.core.active() else {
             return;
         };
         self.run_in(Some(tab), id, values, cx);
@@ -170,7 +170,7 @@ mod tests {
         cx.update(ely_gpui_component::init_for_tests);
         let (offered, total) = cx.update(|cx| {
             ely_ui::settings::install_defaults(cx);
-            ely_ui::i18n::install(cx);
+            ely_ui::i18n::install_as("en-US", cx);
             let media = crate::deck::Deck::text(cx, "show.insert.media", &[]);
             let [insert, _] = super::menus((false, false, false), cx);
             let names = insert.items.iter().filter_map(|item| match item {

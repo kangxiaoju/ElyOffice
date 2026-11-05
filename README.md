@@ -23,6 +23,22 @@ Yu's `fix/yu-workspace-components` branch keeps its current Office client/worker
 
 ## Build
 
+Install Rust with [rustup](https://rustup.rs) (`rust-toolchain.toml` pins the version), then the system packages. Every system also needs Git, Python 3, curl, Node.js 22.18 or newer (the first to run the site's TypeScript tests unflagged) and pnpm (`check.sh` and the site use the last two).
+
+- macOS: Xcode with its Metal toolchain (`xcodebuild -downloadComponent MetalToolchain`), since gpui compiles its shaders with `xcrun metal`; then `brew install cmake ninja pkg-config make gnu-sed bison flex gettext autoconf automake node pnpm` for LibreOffice and the checks (`build-libreoffice.sh` puts Homebrew's GNU make, sed, bison, flex and gettext first).
+- Windows: Visual Studio 2022 with the C++ workload (MSVC, a Windows SDK and CMake with Ninja); gpui compiles its shaders with the SDK's `fxc.exe`. Git for Windows supplies bash and curl. LibreOffice builds under Cygwin in `C:\cygwin64` (`ELY_CYGWIN` elsewhere) with autoconf, automake and LibreOffice's GNU make in `/opt/lo/bin`, as its [Windows build guide](https://wiki.documentfoundation.org/Development/BuildingOnWindows) sets up.
+- Linux, one line per family, then pnpm. LibreOffice builds inside `packaging/linux/container.sh`, hence Docker. Ubuntu's own Node.js is too old, so Node.js 22 comes from NodeSource:
+
+```sh
+sudo apt install build-essential pkg-config git curl python3 docker.io libdbus-1-dev libfontconfig-dev libxcb1-dev libxkbcommon-x11-dev
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install nodejs
+sudo dnf install gcc make pkgconf-pkg-config git curl python3 nodejs npm moby-engine dbus-devel fontconfig-devel libxcb-devel libxkbcommon-x11-devel
+sudo pacman -S --needed base-devel git curl python nodejs npm docker dbus fontconfig libxcb libxkbcommon-x11
+sudo npm install -g pnpm
+```
+
+`scripts/doctor.sh` checks each of these for the system it runs on.
+
 ```sh
 scripts/doctor.sh                 # toolchain versions
 scripts/fetch-references.sh       # upstream sources at pinned commits
@@ -37,6 +53,13 @@ cargo run -p ely-doc              # or ely-table, ely-show, ely-pdf, ely-mail, e
 ElyMail needs a Microsoft client ID at build time: put `ELY_MICROSOFT_CLIENT_ID=<id>` in `cred.txt` at the repository root (git ignores it).
 
 The scripts run on macOS, on Windows (LibreOffice under Cygwin, MuPDF with MSBuild) and on Linux inside `packaging/linux/container.sh`, an AlmaLinux 8 image that keeps the binaries on glibc 2.28.
+
+## Experimental R macros
+
+ElyTable can run local R macros on a selected range, including values, header
+formatting and column widths. See [docs/r-macros.md](docs/r-macros.md) for
+setup, the small API and its limits. Requires R (Rscript) and a LOK engine
+built with patch 0081.
 
 ## Release
 

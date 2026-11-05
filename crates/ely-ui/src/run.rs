@@ -133,6 +133,7 @@ fn open<V: Render>(
     crate::opening::home(app, hands, cx);
     // Settings alone would hold the lock yet open nothing.
     cx.on_window_closed(move |cx, closed| {
+        log::info!("ui: a window closed, {} open", cx.windows().len());
         if crate::tray::closed(closed, cx) {
             cx.quit();
         }
@@ -167,7 +168,11 @@ pub(crate) fn main_window<V: Render>(
         options.window_bounds = Some(bounds);
     }
     let opened = cx.open_window(options, |window, cx| {
-        window.on_next_frame(move |_, cx| {
+        // The platform shows the window before its root exists.
+        log::info!("ui: window shown");
+        window.on_next_frame(move |window, cx| {
+            // Runs before the next draw: after the first present.
+            window.on_next_frame(|_, _| log::info!("ui: first frame presented"));
             startup::started();
             if smoke == Smoke::Once {
                 println!("ready {}", app.name());
@@ -176,7 +181,9 @@ pub(crate) fn main_window<V: Render>(
         });
         theme::follow_system(window);
         crate::settings::follow_frame(app, window, cx);
-        root(app, window, cx)
+        let root = root(app, window, cx);
+        log::info!("ui: root built");
+        root
     })?;
     Ok(opened.into())
 }
@@ -204,7 +211,8 @@ pub fn window_options(app: AppId, size: gpui::Size<gpui::Pixels>, cx: &App) -> W
         titlebar: Some(TitlebarOptions {
             title: Some(app.name().into()),
             appears_transparent: true,
-            traffic_light_position: Some(cx.theme().traffic_light_origin()),
+            // AppKit answers on the main thread; tests run off it.
+            traffic_light_position: (!cx.is_test()).then(|| cx.theme().traffic_light_origin()),
         }),
         window_decorations: Some(WindowDecorations::Client),
         window_min_size: Some(gpui::size(px(640.0), px(420.0))),

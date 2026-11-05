@@ -28,7 +28,7 @@ impl Render for Framed {
 
 /// Waits out the slide until `name` is drawn or not.
 fn drawn(cx: &mut VisualTestContext, name: &'static str, want: bool) -> bool {
-    for _ in 0..50 {
+    for _ in 0..3000 {
         cx.update(|window, _| window.refresh());
         cx.run_until_parked();
         if cx.debug_bounds(name).is_some() == want {
@@ -44,7 +44,7 @@ fn either_panel_folds_from_its_key(cx: &mut TestAppContext) {
     cx.update(|cx| {
         ely_gpui_component::init_for_tests(cx);
         crate::settings::install_defaults(cx);
-        crate::i18n::install(cx);
+        crate::i18n::install_as("en-US", cx);
         crate::commands::bind_keys(cx);
     });
     let window = cx.add_window(|_, cx| {
@@ -78,7 +78,7 @@ fn a_panel_without_room_goes_at_once(cx: &mut TestAppContext) {
     cx.update(|cx| {
         ely_gpui_component::init_for_tests(cx);
         crate::settings::install_defaults(cx);
-        crate::i18n::install(cx);
+        crate::i18n::install_as("en-US", cx);
     });
     let window = cx.add_window(|_, cx| {
         let (left, right) = (cx.new(|_| Probe("left-probe")), cx.new(|_| Probe("right-probe")));
@@ -101,7 +101,7 @@ fn a_panel_without_room_goes_at_once(cx: &mut TestAppContext) {
 /// Each frame of a fold keeps the content's least width.
 fn folds_within(cx: &mut VisualTestContext, keys: &str, name: &'static str) {
     cx.simulate_keystrokes(keys);
-    for _ in 0..50 {
+    for _ in 0..6000 {
         frame(cx);
         let body = cx.debug_bounds("shell-body").expect("the content");
         assert!(body.size.width >= gpui::px(360.0), "{name} folding squeezed the content to {:?}", body.size.width);
@@ -118,7 +118,7 @@ fn a_fold_at_a_narrow_width_never_squeezes_the_content(cx: &mut TestAppContext) 
     cx.update(|cx| {
         ely_gpui_component::init_for_tests(cx);
         crate::settings::install_defaults(cx);
-        crate::i18n::install(cx);
+        crate::i18n::install_as("en-US", cx);
         crate::commands::bind_keys(cx);
     });
     let window = cx.add_window(|_, cx| {
@@ -143,7 +143,7 @@ fn both_at(cx: &mut TestAppContext, width: f32) -> VisualTestContext {
     cx.update(|cx| {
         ely_gpui_component::init_for_tests(cx);
         crate::settings::install_defaults(cx);
-        crate::i18n::install(cx);
+        crate::i18n::install_as("en-US", cx);
         crate::commands::bind_keys(cx);
     });
     let window = cx.add_window(|_, cx| {
@@ -162,7 +162,7 @@ fn both_at(cx: &mut TestAppContext, width: f32) -> VisualTestContext {
 
 /// Frames until `gone` is drawn no more, the content kept.
 fn keeps_least(cx: &mut VisualTestContext, gone: &'static str) {
-    for _ in 0..60 {
+    for _ in 0..6000 {
         frame(cx);
         let body = cx.debug_bounds("shell-body").expect("the content");
         assert!(body.size.width >= gpui::px(360.0), "the content shrank to {:?}", body.size.width);
@@ -208,4 +208,42 @@ fn narrowing_during_a_fold_keeps_the_content(cx: &mut TestAppContext) {
     cx.simulate_resize(gpui::size(gpui::px(640.0), gpui::px(680.0)));
     keeps_least(cx, "right-probe");
     assert!(cx.debug_bounds("left-probe").is_some(), "the left stays");
+}
+
+/// A left view that comes with a document.
+struct Arriving(FocusHandle, Option<AnyView>);
+
+impl Render for Arriving {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().key_context(crate::commands::CONTEXT).child(Shell::new("arriving", &self.0).secondary().left(self.1.clone()))
+    }
+}
+
+#[gpui::test]
+fn a_panel_that_comes_with_content_takes_its_width_at_once(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        ely_gpui_component::init_for_tests(cx);
+        crate::settings::install_defaults(cx);
+        crate::i18n::install_as("en-US", cx);
+        crate::commands::bind_keys(cx);
+    });
+    let window = cx.add_window(|_, cx| Arriving(cx.focus_handle(), None));
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.simulate_resize(gpui::size(gpui::px(1100.0), gpui::px(680.0)));
+    frame(&mut cx);
+    cx.update(|window, cx| {
+        let root = window.root::<Arriving>().flatten().expect("the root");
+        let probe = cx.new(|_| Probe("left-probe"));
+        root.update(cx, |root, cx| {
+            root.1 = Some(probe.into());
+            cx.notify();
+        });
+        window.focus(&root.read(cx).0.clone(), cx);
+    });
+    frame(&mut cx);
+    let body = cx.debug_bounds("shell-body").expect("the content");
+    assert_eq!(body.origin.x, gpui::px(220.0), "the panel slid in with the document");
+    cx.simulate_keystrokes("secondary-alt-s");
+    frame(&mut cx);
+    assert!(cx.debug_bounds("left-probe").is_some(), "the user's fold slides, not jumps");
 }

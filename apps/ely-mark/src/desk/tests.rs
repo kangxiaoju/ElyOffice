@@ -16,7 +16,7 @@ pub(crate) fn start(
     cx.update(ely_gpui_component::init_for_tests);
     cx.update(|cx| {
         ely_ui::settings::install_defaults(cx);
-        ely_ui::i18n::install(cx);
+        ely_ui::i18n::install_as("en-US", cx);
         ely_ui::install_no_launch_files(cx);
     });
     let held = Rc::new(RefCell::new(None));
@@ -174,7 +174,7 @@ fn two_files_are_two_tabs_each_with_its_outline(cx: &mut TestAppContext) {
     assert_eq!(outline(&desk, cx), [(1, "B".into(), 0)]);
     let first = desk.read_with(cx, |desk, _| desk.core.tabs[0].id);
     desk.update(cx, |desk, cx| {
-        desk.core.active = Some(first);
+        desk.core.set_active(Some(first));
         cx.notify();
     });
     assert_eq!(outline(&desk, cx), [(1, "A".into(), 0)]);
@@ -256,4 +256,68 @@ fn files_opened_together_keep_the_order_asked(cx: &mut TestAppContext) {
         desk.core.tabs.iter().map(|tab| tab.name.to_string()).collect()
     });
     assert_eq!(opened, names);
+}
+
+#[gpui::test]
+fn a_closed_tab_frees_its_view_and_document(cx: &mut TestAppContext) {
+    use ely_office::prelude::*;
+    let (data, files) = (tempfile::tempdir().expect("data"), tempfile::tempdir().expect("files"));
+    let (a, b) = (files.path().join("a.md"), files.path().join("b.md"));
+    std::fs::write(&a, "# A\n\nOne.\n").expect("a");
+    std::fs::write(&b, "# B\n\nTwo.\n").expect("b");
+    let (desk, cx) = start(cx, data.path());
+    open(&desk, &a, cx);
+    for _ in 0..3 {
+        open(&desk, &b, cx);
+        let (id, view, document) = desk.read_with(cx, |desk, cx| {
+            let tab = desk.core.tabs.last().expect("b's tab");
+            (tab.id, tab.view.downgrade(), tab.view.read(cx).document().downgrade())
+        });
+        // Drawn once, as the window does.
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        desk.update(cx, |desk, cx| desk.close_tab(id, cx));
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        assert!(view.upgrade().is_none(), "the view outlives its tab");
+        assert!(document.upgrade().is_none(), "the document outlives its tab");
+        let remembered = desk.read_with(cx, |desk, _| desk.remembered.clone());
+        assert!(!remembered.contains_key(&id), "the closed tab's path stays");
+        assert_eq!(remembered.len(), 1, "only a.md is open: {remembered:?}");
+    }
+}
+
+#[gpui::test]
+fn utf16_text_says_why_in_chinese_and_spanish(cx: &mut TestAppContext) {
+    let (data, files) = (tempfile::tempdir().expect("data"), tempfile::tempdir().expect("files"));
+    let path = files.path().join("wide.md");
+    std::fs::write(&path, b"\xFF\xFE#\0 \0a\0").expect("a file");
+    let (desk, cx) = start(cx, data.path());
+    let root = desk.read_with(cx, |desk, _| desk.core.root.upgrade().expect("the window"));
+    for (locale, said) in [("zh-CN", "不读取 UTF-16 文本"), ("es-ES", "no se lee texto UTF-16")] {
+        cx.update(|_, app| ely_ui::i18n::install_as(locale, app));
+        open(&desk, &path, cx);
+        let toasts = root.read_with(cx, |root, cx| root.toasts(cx));
+        assert!(toasts.iter().any(|(text, _)| text.contains(said)), "{locale}: {toasts:?}");
+    }
+    assert!(desk.read_with(cx, |desk, _| desk.core.tabs.is_empty()), "no tab opened");
+}
+
+#[gpui::test]
+fn an_elytree_gone_at_launch_says_so_in_chinese_and_spanish(cx: &mut TestAppContext) {
+    // An installed one would start for real.
+    if ely_platform::apps::installed(AppId::Tree) {
+        return eprintln!("SKIP: ElyTree is installed here");
+    }
+    // The check passed; at launch the app is gone.
+    let gone = ely_platform::apps::open(AppId::Tree, &[]).expect_err("no ElyTree");
+    let data = tempfile::tempdir().expect("data");
+    let (desk, cx) = start(cx, data.path());
+    let root = desk.read_with(cx, |desk, _| desk.core.root.upgrade().expect("the window"));
+    for (locale, said) in [("zh-CN", "ElyTree 没能打开：ElyTree 没有安装"), ("es-ES", "ElyTree no se abrió: ElyTree no está instalado")] {
+        cx.update(|_, app| ely_ui::i18n::install_as(locale, app));
+        desk.update(cx, |desk, cx| desk.tree_failed(&gone, cx));
+        let toasts = root.read_with(cx, |root, cx| root.toasts(cx));
+        assert!(toasts.iter().any(|(text, _)| text.contains(said)), "{locale}: {toasts:?}");
+    }
 }

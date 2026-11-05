@@ -1,6 +1,21 @@
 use ely_gpui_component::i18n::I18n;
 
 mod analysis;
+mod de;
+#[cfg(test)]
+mod german_tests;
+mod es;
+mod ko;
+#[cfg(test)]
+mod korean_tests;
+mod fr;
+#[cfg(test)]
+mod french_tests;
+#[cfg(test)]
+mod spanish_tests;
+mod ja;
+#[cfg(test)]
+mod japanese_tests;
 mod calc;
 mod data;
 mod doc;
@@ -13,6 +28,7 @@ mod mail_notify;
 mod mail_storage;
 mod mail_rules;
 mod mail_search;
+mod mail_stages;
 mod mail_outbox;
 mod mail_write;
 mod mark;
@@ -21,6 +37,7 @@ mod motion;
 mod office;
 mod output;
 mod pdf;
+mod pdf_steps;
 mod play;
 mod refs;
 mod secure;
@@ -31,6 +48,11 @@ mod tools;
 mod tree;
 mod tree_ops;
 mod tree_places;
+mod vi;
+#[cfg(test)]
+mod vietnamese_tests;
+use ely_ipc::{Then, Worded};
+use ely_platform::settings::{LANGUAGES, Language};
 use gpui::{App, SharedString};
 
 const EN: &[(&str, &str)] = &[
@@ -46,6 +68,8 @@ const EN: &[(&str, &str)] = &[
     ("toast.open_failed", "The file did not open: {error}"),
     ("menu.app.switch_failed", "{app} did not open: {error}"),
     ("menu.file", "File"),
+    ("menu.edit", "Edit"),
+    ("menu.view", "View"),
     ("menu.insert", "Insert"),
     ("command.file.new", "New"),
     ("command.file.open", "Open…"),
@@ -89,6 +113,15 @@ const EN: &[(&str, &str)] = &[
         "{title} and its items are gone for good.",
     ),
     ("gallery.delete.confirm", "Delete Page"),
+    ("error.no_documents", "there is no Documents folder"),
+    ("error.no_home", "there is no home folder"),
+    ("error.no_store", "the mail store is not open"),
+    ("error.closed", "the document closed"),
+    ("error.open_there", "an open document is there"),
+    ("error.no_pixels", "the picture has no pixels"),
+    ("error.then", "{error}; removing the files already written failed too: {left}"),
+    ("error.no_key", "the recovery key is not in the key store"),
+    ("error.not_installed", "{app} is not installed"),
 ];
 
 const ZH_CN: &[(&str, &str)] = &[
@@ -104,6 +137,8 @@ const ZH_CN: &[(&str, &str)] = &[
     ("toast.open_failed", "文件没能打开：{error}"),
     ("menu.app.switch_failed", "{app} 没能打开：{error}"),
     ("menu.file", "文件"),
+    ("menu.edit", "编辑"),
+    ("menu.view", "视图"),
     ("menu.insert", "插入"),
     ("command.file.new", "新建"),
     ("command.file.open", "打开…"),
@@ -141,15 +176,21 @@ const ZH_CN: &[(&str, &str)] = &[
     ("gallery.delete.title", "删除{title}？"),
     ("gallery.delete.message", "{title}及其内容将被永久删除。"),
     ("gallery.delete.confirm", "删除页面"),
+    ("error.no_documents", "没有“文档”文件夹"),
+    ("error.no_home", "没有主文件夹"),
+    ("error.no_store", "邮件存储没有打开"),
+    ("error.closed", "文档已关闭"),
+    ("error.open_there", "那里有一个打开着的文档"),
+    ("error.no_pixels", "图片没有像素"),
+    ("error.then", "{error}；已写出的文件也没能删除：{left}"),
+    ("error.no_key", "密钥存储里没有恢复密钥"),
+    ("error.not_installed", "{app} 没有安装"),
 ];
 
-/// zh-* maps to zh-CN; anything else to en-US.
+/// The listed language of `tag`'s primary subtag; else en-US.
 pub fn resolve(tag: &str) -> &'static str {
-    if tag.to_ascii_lowercase().starts_with("zh") {
-        "zh-CN"
-    } else {
-        "en-US"
-    }
+    let primary = |tag: &str| tag.split(['-', '_', '.', '@']).next().unwrap_or_default().to_ascii_lowercase();
+    LANGUAGES.iter().find(|(listed, _)| primary(listed) == primary(tag)).map_or("en-US", |(listed, _)| listed)
 }
 
 /// Installs the catalogs and resolves the locale.
@@ -160,108 +201,130 @@ pub fn install(cx: &mut App) {
     install_as(locale, cx);
 }
 
-/// Installs the catalogs speaking `locale` (en-US or zh-CN).
+/// Installs the catalogs speaking `locale`, a listed tag.
 pub fn install_as(locale: &'static str, cx: &mut App) {
     #[cfg(target_os = "windows")]
     gpui_windows::set_text_language(locale);
-    let (en, zh) = catalogs();
+    let [en, zh, es, ja, ko, vi, fr, de] = catalogs();
     cx.set_global(
         I18n::new(locale)
             .catalog("en-US", &en)
-            .catalog("zh-CN", &zh),
+            .catalog("zh-CN", &zh)
+            .catalog("es-ES", &es)
+            .catalog("ja-JP", &ja)
+            .catalog("ko-KR", &ko)
+            .catalog("vi-VN", &vi)
+            .catalog("fr-FR", &fr)
+            .catalog("de-DE", &de),
     );
 }
 
 /// Keys and messages of one language.
 type Catalog = Vec<(&'static str, &'static str)>;
 
-/// The English and Chinese catalogs, every module's messages.
-fn catalogs() -> (Catalog, Catalog) {
-    let en: Vec<_> = EN
-        .iter()
-        .chain(office::EN)
-        .chain(doc::EN)
-        .chain(refs::EN)
-        .chain(mail::EN)
-        .chain(mail_write::EN)
-        .chain(mail_drafts::EN)
-        .chain(mail_outbox::EN)
-        .chain(mail_organize::EN)
-        .chain(mail_contacts::EN)
-        .chain(mail_migrate::EN)
-        .chain(mail_notify::EN)
-        .chain(mail_storage::EN)
-        .chain(mail_rules::EN)
-        .chain(mail_search::EN)
-        .chain(tools::EN)
-        .chain(table::EN)
-        .chain(calc::EN)
-        .chain(data::EN)
-        .chain(analysis::EN)
-        .chain(output::EN)
-        .chain(show::EN)
-        .chain(motion::EN)
-        .chain(play::EN)
-        .chain(pdf::EN)
-        .chain(secure::EN)
-        .chain(tree::EN)
-        .chain(tree_ops::EN)
-        .chain(tree_places::EN)
-        .chain(mark::EN)
-        .chain(mark_menus::EN)
-        .chain(settings::EN)
-        .copied()
-        .collect();
-    let zh: Vec<_> = ZH_CN
-        .iter()
-        .chain(office::ZH_CN)
-        .chain(doc::ZH_CN)
-        .chain(refs::ZH_CN)
-        .chain(mail::ZH_CN)
-        .chain(mail_write::ZH_CN)
-        .chain(mail_drafts::ZH_CN)
-        .chain(mail_outbox::ZH_CN)
-        .chain(mail_organize::ZH_CN)
-        .chain(mail_contacts::ZH_CN)
-        .chain(mail_migrate::ZH_CN)
-        .chain(mail_notify::ZH_CN)
-        .chain(mail_storage::ZH_CN)
-        .chain(mail_rules::ZH_CN)
-        .chain(mail_search::ZH_CN)
-        .chain(tools::ZH_CN)
-        .chain(table::ZH_CN)
-        .chain(calc::ZH_CN)
-        .chain(data::ZH_CN)
-        .chain(analysis::ZH_CN)
-        .chain(output::ZH_CN)
-        .chain(show::ZH_CN)
-        .chain(motion::ZH_CN)
-        .chain(play::ZH_CN)
-        .chain(pdf::ZH_CN)
-        .chain(secure::ZH_CN)
-        .chain(tree::ZH_CN)
-        .chain(tree_ops::ZH_CN)
-        .chain(tree_places::ZH_CN)
-        .chain(mark::ZH_CN)
-        .chain(mark_menus::ZH_CN)
-        .chain(settings::ZH_CN)
-        .copied()
-        .collect();
-    (en, zh)
+const EN_MODULES: [&[(&str, &str)]; 34] = [
+    EN,
+    office::EN,
+    doc::EN,
+    refs::EN,
+    mail::EN,
+    mail_write::EN,
+    mail_drafts::EN,
+    mail_outbox::EN,
+    mail_organize::EN,
+    mail_contacts::EN,
+    mail_migrate::EN,
+    mail_notify::EN,
+    mail_storage::EN,
+    mail_rules::EN,
+    mail_search::EN,
+    mail_stages::EN,
+    tools::EN,
+    table::EN,
+    calc::EN,
+    data::EN,
+    analysis::EN,
+    output::EN,
+    show::EN,
+    motion::EN,
+    play::EN,
+    pdf::EN,
+    pdf_steps::EN,
+    secure::EN,
+    tree::EN,
+    tree_ops::EN,
+    tree_places::EN,
+    mark::EN,
+    mark_menus::EN,
+    settings::EN,
+];
+
+const ZH_MODULES: [&[(&str, &str)]; 34] = [
+    ZH_CN,
+    office::ZH_CN,
+    doc::ZH_CN,
+    refs::ZH_CN,
+    mail::ZH_CN,
+    mail_write::ZH_CN,
+    mail_drafts::ZH_CN,
+    mail_outbox::ZH_CN,
+    mail_organize::ZH_CN,
+    mail_contacts::ZH_CN,
+    mail_migrate::ZH_CN,
+    mail_notify::ZH_CN,
+    mail_storage::ZH_CN,
+    mail_rules::ZH_CN,
+    mail_search::ZH_CN,
+    mail_stages::ZH_CN,
+    tools::ZH_CN,
+    table::ZH_CN,
+    calc::ZH_CN,
+    data::ZH_CN,
+    analysis::ZH_CN,
+    output::ZH_CN,
+    show::ZH_CN,
+    motion::ZH_CN,
+    play::ZH_CN,
+    pdf::ZH_CN,
+    pdf_steps::ZH_CN,
+    secure::ZH_CN,
+    tree::ZH_CN,
+    tree_ops::ZH_CN,
+    tree_places::ZH_CN,
+    mark::ZH_CN,
+    mark_menus::ZH_CN,
+    settings::ZH_CN,
+];
+
+/// Every language's catalog, every module's messages.
+fn catalogs() -> [Catalog; 8] {
+    [EN_MODULES, ZH_MODULES, es::ES, ja::JA, ko::KO, vi::VI, fr::FR, de::DE].map(|modules| modules.iter().flat_map(|module| module.iter().copied()).collect())
 }
 
 /// `ELY_LOCALE`, then the language setting, then the system's.
 fn locale_tag(cx: &App) -> String {
-    use ely_platform::settings::{Language, word};
     match crate::settings::current(cx).language {
         Language::System => ely_platform::locale::system(),
         _ if ely_platform::env::value("ELY_LOCALE").is_some() => ely_platform::locale::system(),
-        chosen => word(&Language::ALL, &chosen).into(),
+        Language::Listed(tag) => tag.into(),
     }
 }
 
 pub fn text(cx: &App, key: &str, args: &[(&str, &str)]) -> SharedString {
     cx.global::<I18n>().text(key, args)
+}
+
+/// `error` in the window's language when Ely worded it.
+pub fn error(cx: &App, error: &std::io::Error) -> SharedString {
+    if let Some(then) = error.get_ref().and_then(|inner| inner.downcast_ref::<Then>()) {
+        let (first, left) = (self::error(cx, &then.error), self::error(cx, &then.left));
+        return text(cx, "error.then", &[("error", &first), ("left", &left)]);
+    }
+    let Some(said) = error.get_ref().and_then(|inner| inner.downcast_ref::<Worded>()) else {
+        return error.to_string().into();
+    };
+    let args: Vec<_> = said.args.iter().map(|(name, value)| (name.as_str(), value.as_str())).collect();
+    text(cx, said.key, &args)
 }
 
 /// The message for `n` things: `key.one` when one, else `key`.
@@ -290,7 +353,7 @@ fn count_key(key: &str, n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{catalogs, count_key, resolve};
+    use super::{I18n, LANGUAGES, catalogs, count_key, resolve};
     use std::collections::BTreeSet;
 
     #[test]
@@ -312,9 +375,28 @@ mod tests {
         });
     }
 
+    #[gpui::test]
+    fn errors_ely_words_read_in_each_language(cx: &mut gpui::TestAppContext) {
+        use std::io;
+        let locked = super::Worded::error(io::ErrorKind::PermissionDenied, "error.no_key", &[]);
+        let pixels = || super::Worded::error(io::ErrorKind::InvalidData, "error.no_pixels", &[]);
+        let then = super::Worded::then(pixels(), io::Error::other("B"));
+        cx.update(|cx| {
+            for (tag, key, both) in [
+                ("zh-CN", "密钥存储里没有恢复密钥", "图片没有像素；已写出的文件也没能删除：B"),
+                ("es-ES", "la clave de recuperación no está en el almacén de claves", "la imagen no tiene píxeles; tampoco se pudieron eliminar los archivos ya escritos: B"),
+            ] {
+                super::install_as(tag, cx);
+                assert_eq!((super::error(cx, &locked), super::error(cx, &then)), (key.into(), both.into()), "{tag}");
+                assert_eq!(super::error(cx, &io::Error::other("the system's")), "the system's", "{tag}");
+            }
+        });
+        assert_eq!((locked.to_string(), then.to_string()), ("error.no_key".into(), "error.then".into()), "logs name the key");
+    }
+
     #[test]
     fn every_english_singular_reads_unlike_its_plural_at_one() {
-        let (en, _) = catalogs();
+        let [en, ..] = catalogs();
         let text = |key: &str| en.iter().find(|(k, _)| *k == key).map(|(_, v)| *v).expect("the key");
         for (key, one) in en.iter().filter(|(key, _)| key.ends_with(".one")) {
             let many = text(key.trim_end_matches(".one")).replace("{n}", "1").replace("{count}", "1");
@@ -324,11 +406,12 @@ mod tests {
     }
 
     #[test]
-    fn both_catalogs_hold_the_same_keys_and_singulars() {
-        let (en, zh) = catalogs();
+    fn every_catalog_holds_the_same_keys_and_singulars() {
         let keys = |list: &[(&str, &str)]| list.iter().map(|(key, _)| key.to_string()).collect::<BTreeSet<_>>();
-        let (en, zh) = (keys(&en), keys(&zh));
-        assert_eq!(en.symmetric_difference(&zh).collect::<Vec<_>>(), Vec::<&String>::new());
+        let [en, others @ ..] = catalogs().map(|catalog| keys(&catalog));
+        for other in others {
+            assert_eq!(en.symmetric_difference(&other).collect::<Vec<_>>(), Vec::<&String>::new());
+        }
         for key in en.iter().filter_map(|key| key.strip_suffix(".one")) {
             assert!(en.contains(key), "{key}.one has no plural");
         }
@@ -336,11 +419,26 @@ mod tests {
 
     #[test]
     fn zh_variants_pick_zh_cn_others_pick_en() {
-        for tag in ["zh-CN", "zh-Hans", "zh", "ZH-TW"] {
+        for tag in ["zh-CN", "zh-Hans", "zh", "ZH-TW", "zh_CN"] {
             assert_eq!(resolve(tag), "zh-CN", "{tag}");
         }
-        for tag in ["en", "en-US", "fr", "ja", "", "x9!"] {
+        for tag in ["en", "en-US", "it", "", "x9!", "zhx"] {
             assert_eq!(resolve(tag), "en-US", "{tag}");
         }
+    }
+
+    #[gpui::test]
+    fn every_listed_language_has_its_catalog(cx: &mut gpui::TestAppContext) {
+        let primaries: BTreeSet<_> = LANGUAGES.iter().map(|(tag, _)| tag.split('-').next()).collect();
+        assert_eq!(primaries.len(), LANGUAGES.len(), "the system's language picks one");
+        cx.update(|cx| {
+            for (tag, _) in LANGUAGES {
+                assert_eq!(resolve(tag), tag);
+                assert_eq!(resolve(tag.split('-').next().unwrap()), tag);
+                super::install_as(tag, cx);
+                assert_eq!(cx.global::<I18n>().locale().tag, tag);
+                super::text(cx, "settings.language", &[]);
+            }
+        });
     }
 }

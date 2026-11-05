@@ -107,9 +107,29 @@ fn a_preview_draws_the_change_and_keeps_none_of_it() {
     doc = worker.now(doc).expect("the state");
     assert!(grew, "more lines than before");
     assert_eq!(pixels.len(), (w * h * 4) as usize);
-    assert!(pixels.chunks_exact(4).any(|p| p[0] < 128), "it draws text");
+    assert!(pixels.as_chunks::<4>().0.iter().any(|p| p[0] < 128), "it draws text");
     assert_eq!(worker.history(doc).expect("a mark"), before);
     assert!(page_text(&mut worker, doc).contains("Hello world"));
+}
+
+#[test]
+fn a_rewrite_keeps_empty_marked_content_and_drops_its_own() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string();
+    let content = "/Artifact BMC EMC BT /F1 18 Tf 72 700 Td (Hello) Tj ET BT /F1 18 Tf 72 400 Td /Gone BMC (Other) Tj EMC ET";
+    let path = dir.path().join("tagged.pdf");
+    std::fs::write(&path, one_page("", " /Resources << /Font << /F1 5 0 R >> >>", content, &[font])).expect("writes");
+    let mut worker = worker();
+    let mut doc = worker.open(&path).expect("opens").doc;
+    let index = worker.text_blocks(doc, 0).expect("blocks").iter().position(|b| b.text == "Other").expect("other");
+    let writing = rewrite(&mut worker, doc, index, "Else", "helvetica");
+    assert!(matches!(worker.put_text(doc, 0, &writing, 0.0).expect("writes"), Wrote::Done(_)));
+    doc = worker.now(doc).expect("the state");
+    let out = dir.path().join("out.pdf");
+    worker.save(doc, &out).expect("saves");
+    let bytes = std::fs::read(&out).expect("reads");
+    let count = |what: &str| bytes.windows(what.len()).filter(|w| *w == what.as_bytes()).count();
+    assert_eq!((count("/Artifact"), count("/Gone")), (1, 0), "the empty tag stays; the emptied one goes");
 }
 
 #[test]

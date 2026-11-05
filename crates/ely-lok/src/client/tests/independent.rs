@@ -25,7 +25,12 @@ fn checked(worker: &mut Worker, doc: Doc, dir: &Path, case: &str, format: &str) 
 
 /// `tests/scripts/ooxml.py` checks `file` as `case`.
 pub(super) fn read_back(file: &Path, case: &str) {
-    let reader = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/scripts/ooxml.py");
+    read_with("ooxml.py", file, case);
+}
+
+/// The `tests/scripts` reader `script` checks `file` as `case`.
+pub(super) fn read_with(script: &str, file: &Path, case: &str) {
+    let reader = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/scripts").join(script);
     // The file passes, and each known damage to it fails.
     for args in [vec![case], vec!["selftest", case]] {
         let out = match Command::new("python3").arg(&reader).args(&args).arg(file).output() {
@@ -81,9 +86,8 @@ fn an_xlsx_keeps_formulas_and_results_across_sessions() {
         ("H8", "=SUM(H1:H2)"),
     ]);
     let doc = reopened(&mut worker, doc, dir.path(), "sheet", "xlsx");
-    poll_until(&mut worker, &doc, &Events::default(), std::time::Duration::from_secs(3), |seen| {
-        seen.cell.cursor.is_some()
-    });
+    let seen = poll_until(&mut worker, &doc, &Events::default(), HANG, |seen| seen.cell.cursor.is_some());
+    assert!(seen.cell.cursor.is_some(), "the reopened sheet reports its cursor");
     enter(&mut worker, &doc, &[("H9", "=H3+1")]);
     checked(&mut worker, doc, dir.path(), "sheet", "xlsx");
 }

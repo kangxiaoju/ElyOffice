@@ -82,7 +82,7 @@ impl PdfView {
                 let scale = at[2] - at[0];
                 let strokes = strokes.iter().map(|stroke| stroke.iter().map(|p| (at[0] + p.0 * scale, at[1] + p.1 * scale)).collect()).collect();
                 let annot = NewAnnot { page, shape: Shape::Ink(strokes), rgb: Some(0), contents: String::new(), author: String::new() };
-                self.annotate("placing a drawn signature", vec![annot], cx);
+                self.annotate("pdf.doing.sign_drawn", vec![annot], cx);
             }
             Stamp::Typed { text, font } => {
                 let at = placed(0.35, rect, click);
@@ -97,15 +97,15 @@ impl PdfView {
                 };
                 let write = move |worker: &mut ely_pdf_engine::Worker, doc| match worker.put_text(doc, page, &writing, 0.0)? {
                     Wrote::Done(mark) => Ok(mark),
-                    Wrote::Missing(c) => Err(io::Error::new(io::ErrorKind::InvalidInput, format!("the font has no “{c}”"))),
-                    Wrote::Unwritable => Err(io::Error::other("the document's font cannot write")),
+                    Wrote::Missing(c) => Err(crate::writes::no_glyph(c)),
+                    Wrote::Unwritable => Err(crate::writes::unwritable()),
                     Wrote::Preview(..) => Err(io::Error::other("a preview where a write was asked")),
                 };
-                self.edit_at("placing a typed signature", write, cx);
+                self.edit_at("pdf.doing.sign_typed", write, cx);
             }
             Stamp::Picture { path, aspect } => {
                 let at = placed(aspect, rect, click);
-                self.edit_at("placing a signature picture", move |worker, doc| worker.add_image(doc, page, &path, at), cx);
+                self.edit_at("pdf.doing.sign_picture", move |worker, doc| worker.add_image(doc, page, &path, at), cx);
             }
         }
     }
@@ -129,7 +129,7 @@ impl Viewer {
                         making.picture = Some((path, h as f32 / w as f32));
                     }
                 }
-                Ok(_) => viewer.panel_failed("a picture with no pixels", cx),
+                Ok(_) => viewer.panel_failed(&ely_ui::i18n::text(cx, "error.no_pixels", &[]), cx),
                 Err(error) => viewer.panel_failed(&error.to_string(), cx),
             }
             cx.notify();

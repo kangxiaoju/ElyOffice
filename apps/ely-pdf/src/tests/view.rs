@@ -279,22 +279,22 @@ fn same(a: (usize, f32, f32, f32), b: (usize, f32, f32, f32)) -> bool {
     a.0 == b.0 && (b.1 < 0.0 || (a.1 - b.1).abs() < 0.5) && down
 }
 
-/// `pages` at scale 2, held at `at` on `page`.
+/// `pages` at `scale`, held at `at` on `page`.
 fn held<'a>(
     cx: &'a mut TestAppContext,
     dir: &std::path::Path,
     pages: &[(f32, f32, &[&str])],
-    (mode, page): (Mode, usize),
+    (mode, page, scale): (Mode, usize, f32),
     at: (f32, f32),
 ) -> (Entity<Viewer>, &'a mut VisualTestContext, Entity<PdfView>) {
     let (viewer, cx) = windowed(cx, dir, &[file(dir, "held.pdf", pages)], true);
     let view = shown(cx, &viewer);
     settle(cx, |app| view.read(app).room.size.width > px(100.0));
-    cx.update(|_, app| view.update(app, |view, cx| view.change(|view, _| (view.zoom, view.mode) = (Zoom::Scale(2.0), mode), cx)));
+    cx.update(|_, app| view.update(app, |view, cx| view.change(|view, _| (view.zoom, view.mode) = (Zoom::Scale(scale), mode), cx)));
     frames(cx);
     cx.update(|_, app| view.update(app, |view, cx| {
         let place = *view.laid_out().placed.iter().find(|p| p.page == page).expect("the page");
-        view.go_to = Some((place.x + at.0 * 2.0, place.y + at.1 * 2.0));
+        view.go_to = Some((place.x + at.0 * scale, place.y + at.1 * scale));
         cx.notify();
     }));
     frames(cx);
@@ -305,7 +305,7 @@ fn held<'a>(
 fn zooming_out_near_a_page_bottom_keeps_the_spot() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let mut cx = TestAppContext::single();
-    let (viewer, cx, view) = held(&mut cx, dir.path(), &[(612.0, 792.0, &["p"] as &[&str]); 10], (Mode::Continuous, 1), (0.0, 764.5));
+    let (viewer, cx, view) = held(&mut cx, dir.path(), &[(612.0, 792.0, &["p"] as &[&str]); 10], (Mode::Continuous, 1, 2.0), (0.0, 764.5));
     let before = spot(cx, &view);
     assert_eq!((before.0, before.2), (1, 764.5), "near page 2's bottom");
     for _ in 0..2 {
@@ -317,10 +317,65 @@ fn zooming_out_near_a_page_bottom_keeps_the_spot() {
 }
 
 #[test]
+fn a_wide_page_further_down_takes_no_zoom_from_the_page_read() {
+    let letter: (f32, f32, &[&str]) = (612.0, 792.0, &["p"]);
+    // Wide page off screen, then just below the page read.
+    for (wide, at) in [(9, 100.0), (2, 750.0)] {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let mut cx = TestAppContext::single();
+        let mut pages = [letter; 10];
+        pages[wide] = (792.0, 612.0, &["wide"]);
+        // No pan: the wide page reaches further left.
+        let (viewer, cx, view) = held(&mut cx, dir.path(), &pages, (Mode::Continuous, 1, 2.0), (-1000.0, at));
+        let before = spot(cx, &view);
+        assert_eq!((before.0, before.2), (1, at), "on page 2: {before:?}");
+        let shown = cx.update(|_, app| {
+            let view = view.read(app);
+            let bottom = -f32::from(view.scroll.offset().y) + f32::from(view.room.size.height);
+            crate::layout::visible(&view.laid_out(), 0.0, bottom).any(|place| place.page == wide)
+        });
+        assert_eq!(shown, wide == 2, "page {} in view", wide + 1);
+        let secondary = cx.update(|_, cx| Modifiers::secondary_key(cx));
+        let center = cx.update(|_, app| view.read(app).room.center());
+        for how in ["key", "status bar", "wheel"] {
+            match how {
+                "key" => cx.update(|_, app| viewer.update(app, |viewer, cx| crate::keys::zoom(viewer, ZoomStep::Out, cx))),
+                "status bar" => {
+                    let bar = cx.debug_bounds("pdf-zoom").expect("the zoom control");
+                    cx.simulate_click(point(bar.left() + px(8.0), bar.center().y), Modifiers::none());
+                }
+                _ => cx.simulate_event(ScrollEvent { position: center, delta: ScrollDelta::Lines(point(0.0, -3.0)), modifiers: secondary, ..Default::default() }),
+            }
+            frames(cx);
+            let after = spot(cx, &view);
+            assert!(after.3 < before.3, "{how} zooms out");
+            assert!(same(after, before), "{how} keeps page 2 with page {} wide: {before:?} -> {after:?}", wide + 1);
+        }
+    }
+}
+
+#[test]
+fn a_long_two_page_row_keeps_its_right_hand_page() {
+    // Far down, a row's two middles round apart.
+    let tall: (f32, f32, &[&str]) = (2383.937, 3370.394, &["p"]);
+    let broad: (f32, f32, &[&str]) = (3370.394, 2383.937, &["p"]);
+    let pages: Vec<_> = (0..1664).map(|page| if page % 2 == 0 { broad } else { tall }).collect();
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let (viewer, cx, view) = held(&mut cx, dir.path(), &pages, (Mode::Two, 1657, 3.0), (100.0, 100.0));
+    let before = spot(cx, &view);
+    assert_eq!(before.0, 1657, "on page 1658: {before:?}");
+    cx.update(|_, app| viewer.update(app, |viewer, cx| crate::keys::zoom(viewer, ZoomStep::Out, cx)));
+    frames(cx);
+    let after = spot(cx, &view);
+    assert!(same(after, before), "a step out keeps page 1658: {before:?} -> {after:?}");
+}
+
+#[test]
 fn a_zoom_keeps_the_spot_across() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let mut cx = TestAppContext::single();
-    let (viewer, cx, view) = held(&mut cx, dir.path(), &[(1200.0, 792.0, &["p"] as &[&str]); 10], (Mode::Continuous, 1), (200.0, 284.0));
+    let (viewer, cx, view) = held(&mut cx, dir.path(), &[(1200.0, 792.0, &["p"] as &[&str]); 10], (Mode::Continuous, 1, 2.0), (200.0, 284.0));
     let before = spot(cx, &view);
     assert!(before.1 > 150.0, "panned into the page: {before:?}");
     cx.update(|_, app| viewer.update(app, |viewer, cx| crate::keys::zoom(viewer, ZoomStep::In, cx)));
@@ -339,7 +394,7 @@ fn a_zoom_on_the_right_hand_page_keeps_its_spot() {
         for at in [(100.0, 50.0), (100.0, -4.0)] {
             let dir = tempfile::tempdir().expect("a temp dir");
             let mut cx = TestAppContext::single();
-            let (viewer, cx, view) = held(&mut cx, dir.path(), &pages, (Mode::Two, 3), at);
+            let (viewer, cx, view) = held(&mut cx, dir.path(), &pages, (Mode::Two, 3, 2.0), at);
             let before = spot(cx, &view);
             assert_eq!(before.0, 3, "by the right-hand page: {before:?}");
             cx.update(|_, app| viewer.update(app, |viewer, cx| crate::keys::zoom(viewer, ZoomStep::In, cx)));
@@ -348,4 +403,57 @@ fn a_zoom_on_the_right_hand_page_keeps_its_spot() {
             assert!(same(after, before), "a step in at {at:?} keeps the spot: {before:?} -> {after:?}");
         }
     }
+}
+
+#[test]
+fn a_zoom_beside_a_short_page_keeps_its_place_in_the_row() {
+    let broad: (f32, f32, &[&str]) = (792.0, 612.0, &["p"]);
+    let tall: (f32, f32, &[&str]) = (612.0, 792.0, &["p"]);
+    // Above page 3, then below it, in its row.
+    for (mode, at) in [(Mode::Two, (100.0, -60.0)), (Mode::Two, (100.0, 650.0)), (Mode::Horizontal, (100.0, -60.0))] {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let mut cx = TestAppContext::single();
+        let pages = [broad, tall, broad, tall, broad, tall, broad, tall];
+        let (viewer, cx, view) = held(&mut cx, dir.path(), &pages, (mode, 2, 2.0), at);
+        // Points across page 3, down its row.
+        let place = |cx: &mut VisualTestContext| cx.update(|_, app| {
+            let view = view.read(app);
+            let (laid, offset) = (view.laid_out(), view.scroll.offset());
+            let page = laid.placed.iter().find(|p| p.page == 2).expect("page 3");
+            let start = laid.placed.iter().filter(|p| p.row == page.row).map(|p| p.y).fold(f32::INFINITY, f32::min);
+            ((-f32::from(offset.x) - page.x) / laid.scale, (-f32::from(offset.y) - start) / laid.scale, laid.scale)
+        });
+        let before = place(cx);
+        assert!((before.0 - 100.0).abs() < 0.5 && (before.1 - (at.1 + 90.0)).abs() < 0.5, "{mode:?} {at:?}: {before:?}");
+        cx.update(|_, app| viewer.update(app, |viewer, cx| crate::keys::zoom(viewer, ZoomStep::Out, cx)));
+        frames(cx);
+        let after = place(cx);
+        assert!(after.2 < before.2, "{mode:?} zooms out");
+        let kept = (after.0 - before.0).abs() < 0.5 && (after.1 - before.1).abs() < 0.5;
+        assert!(kept, "{mode:?} {at:?} keeps the spot: {before:?} -> {after:?}");
+    }
+}
+
+#[test]
+fn single_mode_keeps_the_spot_on_the_tall_page_of_a_pair() {
+    let short: (f32, f32, &[&str]) = (300.0, 100.0, &["p"]);
+    let tall: (f32, f32, &[&str]) = (612.0, 792.0, &["p"]);
+    let pages = [short, tall, short, tall, short, tall, short, tall];
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    // Left over page 3, top below it on page 4.
+    let (_viewer, cx, view) = held(&mut cx, dir.path(), &pages, (Mode::Two, 2, 3.0), (100.0, 114.0));
+    let down = |cx: &mut VisualTestContext| cx.update(|_, app| {
+        let view = view.read(app);
+        let laid = view.laid_out();
+        let place = laid.placed.iter().find(|p| p.page == view.current).expect("the page read");
+        (view.current, (-f32::from(view.scroll.offset().y) - place.y) / laid.scale)
+    });
+    let before = down(cx);
+    assert_eq!(before.0, 3, "page 4 is read: {before:?}");
+    assert!((before.1 - 460.0).abs() < 0.5, "partway down: {before:?}");
+    cx.update(|_, app| view.update(app, |view, cx| view.change(|view, _| view.mode = Mode::Single, cx)));
+    frames(cx);
+    let after = down(cx);
+    assert!(after.0 == before.0 && (after.1 - before.1).abs() < 0.5, "single mode keeps the spot: {before:?} -> {after:?}");
 }

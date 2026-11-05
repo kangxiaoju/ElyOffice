@@ -20,9 +20,12 @@ pub enum Appearance {
 pub enum Language {
     #[default]
     System,
-    English,
-    Chinese,
+    /// A tag from `LANGUAGES`.
+    Listed(&'static str),
 }
+
+/// Each interface language: its locale tag and own name.
+pub const LANGUAGES: [(&str, &str); 8] = [("de-DE", "Deutsch"), ("en-US", "English"), ("es-ES", "Español"), ("fr-FR", "Français"), ("ja-JP", "日本語"), ("ko-KR", "한국어"), ("vi-VN", "Tiếng Việt"), ("zh-CN", "简体中文")];
 
 /// Interface motion; System follows the OS setting.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -37,6 +40,7 @@ pub const APPEARANCE: &str = "appearance";
 pub const LANGUAGE: &str = "language";
 pub const MOTION: &str = "motion";
 pub const OMARCHY_SYNC: &str = "omarchy_sync";
+pub const ALWAYS_SCROLLBARS: &str = "always_scrollbars";
 pub const AUTHOR: &str = "author";
 pub const CHECK_UPDATES: &str = "check_updates";
 pub const UI_FONT: &str = "ui_font";
@@ -71,6 +75,22 @@ pub enum Sides {
     Short,
 }
 
+pub const PAPER: &str = "paper";
+
+/// The paper a new document starts on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Paper {
+    /// Letter in the system's Letter regions, else A4.
+    #[default]
+    Region,
+    A4,
+    Letter,
+}
+
+impl Paper {
+    pub const ALL: [(Self, &'static str); 3] = [(Self::Region, "region"), (Self::A4, "a4"), (Self::Letter, "letter")];
+}
+
 impl Sides {
     pub const ALL: [(Self, &'static str); 4] = [(Self::Printer, "printer"), (Self::One, "one"), (Self::Long, "long"), (Self::Short, "short")];
 }
@@ -92,6 +112,8 @@ pub struct Shared {
     pub language: Language,
     pub motion: Motion,
     pub omarchy_sync: bool,
+    /// Scrollbars stay shown instead of fading.
+    pub always_scrollbars: bool,
     /// Signs comments and changes; empty means the account name.
     pub author: String,
     /// Asks for a newer release at launch; off unless chosen.
@@ -102,6 +124,7 @@ pub struct Shared {
     pub ui_text_size: u32,
     pub doc_zoom: DocZoom,
     pub two_sided: Sides,
+    pub paper: Paper,
 }
 
 impl Default for Shared {
@@ -111,12 +134,14 @@ impl Default for Shared {
             language: Language::System,
             motion: Motion::System,
             omarchy_sync: true,
+            always_scrollbars: false,
             author: String::new(),
             check_updates: false,
             ui_font: String::new(),
             ui_text_size: UI_TEXT_SIZES.2,
             doc_zoom: DocZoom::Auto,
             two_sided: Sides::Printer,
+            paper: Paper::Region,
         }
     }
 }
@@ -126,7 +151,18 @@ impl Appearance {
 }
 
 impl Language {
-    pub const ALL: [(Self, &'static str); 3] = [(Self::System, "system"), (Self::English, "en-US"), (Self::Chinese, "zh-CN")];
+    /// As the file stores it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Listed(tag) => tag,
+        }
+    }
+
+    /// The language stored as `word`, if any.
+    fn of(word: &str) -> Option<Self> {
+        std::iter::once(Self::System).chain(LANGUAGES.map(|(tag, _)| Self::Listed(tag))).find(|language| language.word() == word)
+    }
 }
 
 impl Motion {
@@ -149,7 +185,10 @@ impl Shared {
         let defaults = Self::default();
         Ok(Self {
             appearance: pick(fields, APPEARANCE, &Appearance::ALL)?.unwrap_or(defaults.appearance),
-            language: pick(fields, LANGUAGE, &Language::ALL)?.unwrap_or(defaults.language),
+            language: match fields.get(LANGUAGE) {
+                None => defaults.language,
+                Some(value) => value.as_str().and_then(Language::of).ok_or_else(|| wrong(LANGUAGE, value))?,
+            },
             motion: pick(fields, MOTION, &Motion::ALL)?.unwrap_or(defaults.motion),
             check_updates: match fields.get(CHECK_UPDATES) {
                 None => defaults.check_updates,
@@ -160,6 +199,11 @@ impl Shared {
                 None => defaults.omarchy_sync,
                 Some(Value::Bool(on)) => *on,
                 Some(other) => return Err(wrong(OMARCHY_SYNC, other)),
+            },
+            always_scrollbars: match fields.get(ALWAYS_SCROLLBARS) {
+                None => defaults.always_scrollbars,
+                Some(Value::Bool(on)) => *on,
+                Some(other) => return Err(wrong(ALWAYS_SCROLLBARS, other)),
             },
             author: match fields.get(AUTHOR) {
                 None => defaults.author,
@@ -188,6 +232,7 @@ impl Shared {
                     .ok_or_else(|| wrong(DOC_ZOOM, value))?,
             },
             two_sided: pick(fields, TWO_SIDED, &Sides::ALL)?.unwrap_or(defaults.two_sided),
+            paper: pick(fields, PAPER, &Paper::ALL)?.unwrap_or(defaults.paper),
         })
     }
 }

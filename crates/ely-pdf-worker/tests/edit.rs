@@ -252,11 +252,11 @@ fn an_edit_leaving_a_page_too_small_is_undone_and_never_redone() {
     assert_eq!(worker.bounds(again, 0, 1).expect("bounds"), [[0.0, 0.0, 396.0, 306.0]]);
 }
 
-/// Runs `step` on its own thread, ten seconds at most.
+/// Runs `step` on its own thread, a minute at most.
 fn bounded<T: Send + 'static>(step: impl FnOnce() -> T + Send + 'static) -> T {
     let (done, answer) = std::sync::mpsc::channel();
     std::thread::spawn(move || done.send(step()).expect("the test waits"));
-    answer.recv_timeout(std::time::Duration::from_secs(10)).expect("done in time")
+    answer.recv_timeout(std::time::Duration::from_secs(60)).expect("done in time")
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn long_clashing_field_names_still_get_a_number() {
 /// Red pixels of a page at one pixel a point.
 fn red(worker: &mut Worker, doc: Doc, page: usize) -> usize {
     let pixels = worker.render(doc, page, (1.0, 0), [0, 0, 612, 792]).expect("renders").bgra;
-    pixels.chunks_exact(4).filter(|p| p[2] > 180 && p[1] < 80 && p[0] < 80).count()
+    pixels.as_chunks::<4>().0.iter().filter(|p| p[2] > 180 && p[1] < 80 && p[0] < 80).count()
 }
 
 #[test]

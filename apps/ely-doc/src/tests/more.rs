@@ -57,7 +57,7 @@ fn a_local_template_with_macros_opens_in_risk_mode() {
     with_window(&mut cx, &docs, |docs, _, cx| {
         docs.new_from_file(&template, cx)
     });
-    settle(&cx, |app| docs.read(app).core.active.is_some());
+    settle(&cx, |app| docs.read(app).core.active().is_some());
     cx.update(|app| {
         assert!(
             docs.read(app).active_tab().expect("a tab").risk.is_some(),
@@ -330,6 +330,51 @@ fn the_side_panel_hides_and_review_brings_it_back() {
     assert!(shown(&mut cx));
 }
 
+/// A window root that shows one view.
+struct Shown(gpui::AnyView);
+
+impl gpui::Render for Shown {
+    fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl gpui::IntoElement {
+        use gpui::{ParentElement as _, Styled as _};
+        gpui::div().size_full().child(self.0.clone())
+    }
+}
+
+#[test]
+fn the_side_tabs_lead_back_from_mail_merge() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let Some(docs) = docs(&mut cx, dir.path()) else {
+        eprintln!("SKIP: no LOK build");
+        return;
+    };
+    cx.update(|cx| {
+        ely_gpui_component::init_for_tests(cx);
+        ely_gpui_component::theme::Theme::update(cx, |theme| theme.reduced_motion = true);
+    });
+    blank(&mut cx, &docs);
+    cx.update(|app| docs.update(app, |docs, cx| docs.show_side(crate::docs::Side::Merge, cx)));
+    let column = cx.update(|app| docs.update(app, |docs, cx| docs.side_view(cx))).expect("a column");
+    let window = cx.add_window(|_, _| Shown(column));
+    let mut shown = gpui::VisualTestContext::from_window(window.into(), &cx);
+    let click = |shown: &mut gpui::VisualTestContext, tab: &'static str| {
+        // Past reduced motion's 1ms indicator.
+        for _ in 0..3 {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            shown.update(|window, _| window.refresh());
+            shown.run_until_parked();
+        }
+        let bounds = shown.debug_bounds(tab).expect("the tab is drawn");
+        shown.simulate_click(bounds.center(), gpui::Modifiers::none());
+        shown.run_until_parked();
+    };
+    click(&mut shown, "tab-0");
+    assert_eq!(cx.update(|app| docs.read(app).side), crate::docs::Side::Props, "Format comes back");
+    click(&mut shown, "tab-2");
+    assert_eq!(cx.update(|app| docs.read(app).side), crate::docs::Side::Merge);
+    assert!(cx.update(|app| ely_ui::settings::panels::shown(false, app)), "the column stays open");
+}
+
 #[test]
 fn a_default_zoom_opens_each_document_at_it() {
     use ely_platform::settings::DocZoom;
@@ -345,4 +390,105 @@ fn a_default_zoom_opens_each_document_at_it() {
     cx.update(|app| app.global_mut::<ely_ui::settings::Current>().shared.doc_zoom = DocZoom::Percent(150));
     blank(&mut cx, &docs);
     assert_eq!(zoom(&mut cx), 1.5);
+}
+
+#[test]
+fn a_file_moved_away_asks_where_its_save_goes() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let Some(docs) = docs(&mut cx, dir.path()) else {
+        eprintln!("SKIP: no LOK build");
+        return;
+    };
+    let id = blank(&mut cx, &docs);
+    let first = dir.path().join("未命名 1.docx");
+    with_window(&mut cx, &docs, |docs, window, cx| docs.write_as(id, first.clone(), None, window, cx));
+    written(&cx, &first, None);
+    // Moved to the Desktop outside Ely.
+    std::fs::rename(&first, dir.path().join("moved.docx")).expect("moved outside");
+    type_into(&mut cx, &docs, "AfterTheMove");
+    with_window(&mut cx, &docs, |docs, window, cx| docs.save(id, None, window, cx));
+    settle(&cx, |_| cx.did_prompt_for_new_path());
+    let chosen = dir.path().join("chosen.docx");
+    let pick = chosen.clone();
+    cx.simulate_new_path_selection(move |_| Some(pick));
+    written(&cx, &chosen, None);
+    assert!(!first.exists(), "nothing comes back where the file was");
+    let name = cx.update(|app| docs.read(app).active_tab().expect("a tab").name.clone());
+    assert_eq!(name.as_ref(), "chosen.docx");
+}
+
+/// Saves, deletes the file outside, then cancels Save As.
+fn cancel_after_the_file_goes(edit: bool) {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let Some(docs) = docs(&mut cx, dir.path()) else {
+        eprintln!("SKIP: no LOK build");
+        return;
+    };
+    let id = blank(&mut cx, &docs);
+    type_into(&mut cx, &docs, "KeptInMemory");
+    let first = dir.path().join("first.docx");
+    with_window(&mut cx, &docs, |docs, window, cx| docs.write_as(id, first.clone(), None, window, cx));
+    written(&cx, &first, None);
+    std::fs::remove_file(&first).expect("deleted outside");
+    if edit {
+        type_into(&mut cx, &docs, "AfterTheDelete");
+    }
+    with_window(&mut cx, &docs, |docs, window, cx| docs.save(id, None, window, cx));
+    settle(&cx, |_| cx.did_prompt_for_new_path());
+    cx.simulate_new_path_selection(|_| None);
+    cx.run_until_parked();
+    let (state, dirty) = cx.update(|app| {
+        let tab = docs.read(app).active_tab().expect("a tab");
+        (tab.session.state(), tab.dirty(app))
+    });
+    // Autosave skips it; closing still asks.
+    assert_eq!(state, ely_files::SaveState::SaveFailed);
+    assert!(dirty, "the only copy is in memory");
+}
+
+#[test]
+fn a_cancelled_save_of_a_deleted_file_still_asks_on_close() {
+    cancel_after_the_file_goes(false);
+}
+
+#[test]
+fn a_cancelled_save_after_edits_stops_autosave_asking() {
+    cancel_after_the_file_goes(true);
+}
+
+#[test]
+fn a_program_saving_a_file_deleted_meanwhile_gets_an_error() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let mut cx = TestAppContext::single();
+    let Some(docs) = docs(&mut cx, dir.path()) else {
+        eprintln!("SKIP: no LOK build");
+        return;
+    };
+    let id = blank(&mut cx, &docs);
+    type_into(&mut cx, &docs, "KeepThis");
+    let path = dir.path().join("remote.docx");
+    with_window(&mut cx, &docs, |docs, window, cx| docs.write_as(id, path.clone(), None, window, cx));
+    written(&cx, &path, None);
+    let asked = serde_json::json!(["save", path.display().to_string()]).to_string();
+    let (ask, answered) = ely_ui::Ask::for_tests(&asked);
+    // Accepted while there; gone before it runs.
+    with_window(&mut cx, &docs, |docs, _, cx| {
+        docs.answer_request(ask, cx);
+        std::fs::remove_file(&path).expect("deleted outside");
+    });
+    let answer = std::cell::RefCell::new(None);
+    settle(&cx, |_| {
+        *answer.borrow_mut() = answered.try_recv().ok();
+        answer.borrow().is_some() || cx.did_prompt_for_new_path()
+    });
+    assert!(!cx.did_prompt_for_new_path(), "a program gets no dialog");
+    let answer = answer.into_inner().expect("an answer");
+    assert!(answer.as_ref().is_err_and(|why| why.contains("moved or deleted")), "{answer:?}");
+    cx.update(|app| {
+        let docs = docs.read(app);
+        assert!(docs.core.saving.is_empty(), "no request left waiting");
+        assert_eq!(docs.tab(id).expect("open").session.state(), ely_files::SaveState::SaveFailed);
+    });
 }

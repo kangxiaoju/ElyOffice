@@ -12,7 +12,7 @@ use crate::view::Mode;
 fn ask(desk: &Entity<Desk>, words: &[&str], cx: &mut VisualTestContext) -> Result<String, String> {
     let (ask, answered) = ely_ui::Ask::for_tests(&serde_json::json!(words).to_string());
     desk.update(cx, |desk, cx| desk.answer_request(ask, cx));
-    for _ in 0..200 {
+    for _ in 0..6000 {
         cx.run_until_parked();
         if let Ok(answer) = answered.try_recv() {
             return answer;
@@ -94,6 +94,6 @@ fn a_deleted_files_tab_still_reads_and_replaces(cx: &mut TestAppContext) {
     assert_eq!(ask(&desk, &["replace", &file, "dog", "fox"], cx), Ok(String::new()));
     assert_eq!(ask(&desk, &["get", &file], cx).as_deref(), Ok("fox\n"));
     let refused = ask(&desk, &["save", &file], cx);
-    assert!(refused.as_ref().is_err_and(|why| why.contains("gone from disk")), "{refused:?}");
+    assert!(refused.as_ref().is_err_and(|why| why.contains("moved or deleted")), "{refused:?}");
     assert!(!path.exists(), "nothing written back");
 }

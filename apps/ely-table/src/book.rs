@@ -7,7 +7,7 @@ use std::{
 };
 
 use ely_gpui_component::{
-    feedback::{Banner, EmptyState},
+    feedback::Banner,
     primitives::{IconName, Severity},
     shell::{StatusBar, StatusBarItem},
 };
@@ -72,6 +72,8 @@ pub struct Book {
     pub imports: std::collections::VecDeque<crate::text::Pending>,
     /// Undo and Redo as the menus show them.
     pub undo_menu: (bool, bool),
+    /// The R editor's code, kept between openings.
+    pub r_code: Option<Entity<ely_gpui_component::forms::TextInput>>,
 }
 
 impl Host for Book {
@@ -104,8 +106,14 @@ impl Host for Book {
         self.offer_menu(id, view, cx);
         self.follow_rule(id, view, cx);
         self.read_links(id, view, cx);
-        if self.core.active == Some(id) {
+        if self.core.active() == Some(id) {
             self.sync_bars(view, cx);
+        }
+    }
+
+    fn tab_shown(&mut self, id: u64, cx: &mut Context<Self>) {
+        if let Some(view) = self.tab(id).map(|tab| tab.view.clone()) {
+            self.reread(id, &view, cx);
         }
     }
 
@@ -134,18 +142,19 @@ fn menus(undo: (bool, bool), cx: &App) -> Vec<gpui::Menu> {
         crate::formulas::menu(cx),
         crate::data::menu(cx),
         crate::page::menu(cx),
+        crate::macros::menu(cx),
     ]
 }
 
 /// The window root with a blank workbook.
 pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
     ely_lok::init(cx);
-    let (worker, work) = match ely_office::start(app, cx) {
+    let (worker, stop, work) = match ely_office::start(app, cx) {
         Ok(started) => started,
         Err(error) => ely_platform::startup::fail(app, &format!("{error}")),
     };
     let book = cx.new(|cx| {
-        let mut host = Book::new(worker, work, window, cx);
+        let mut host = Book::new(worker, stop, work, window, cx);
         // Recovery points, crash return, autosave (§6.2, §6.3).
         ely_office::Recovering::start_recovery(&mut host, cx);
         <Book as ely_office::Autosaving>::start_autosave(cx);
@@ -192,6 +201,7 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
 impl Book {
     pub fn new(
         worker: Arc<Mutex<Worker>>,
+        stop: Option<ely_office::Stop>,
         work: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -201,7 +211,7 @@ impl Book {
         // A closed dialog lets the next import ask.
         cx.observe_self(|book, cx| book.next_import(cx)).detach();
         Book {
-            core: Core::new(worker, work, cx),
+            core: Core::new(worker, stop, work, cx),
             dialog: None,
             bars: Bars::new(window, cx),
             drag: None,
@@ -211,6 +221,7 @@ impl Book {
             choices: None,
             imports: Default::default(),
             undo_menu: (false, false),
+            r_code: None,
         }
     }
 
@@ -243,8 +254,9 @@ impl Book {
         let Some(tab) = self.tab(id) else {
             return;
         };
-        // Numbered commands need the list read at the latest revision.
-        let behind = tab.extra.read_at.as_ref().is_some_and(|at| view.read(cx).read_at().newer_than(at));
+        // Numbered commands need the latest read; hidden books wait.
+        let behind = self.core.active() == Some(id)
+            && tab.extra.read_at.as_ref().is_some_and(|at| view.read(cx).read_at().newer_than(at));
         if tab.extra.reading || tab.extra.read == Some(seen) && !behind {
             return;
         }
@@ -386,11 +398,7 @@ impl Book {
 
     fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.active_tab().is_none() {
-            let title = match self.core.loading.first() {
-                Some((_, name)) => Self::text(cx, "office.loading", &[("name", name)]),
-                None => Self::text(cx, "command.blocked.no_document", &[]),
-            };
-            return EmptyState::new("table-empty", IconName::Table, title).into_any_element();
+            return self.empty_body("table-empty", IconName::Table, cx);
         }
         let risk = self.stopped_banner(cx).or_else(|| self.risk_banner(cx));
         div()
@@ -435,6 +443,7 @@ impl Render for Book {
             .track_focus(&self.core.focus)
             .on_action(cx.listener(|book, _: &commands::New, _, cx| book.new_blank(cx)))
             .on_action(cx.listener(Self::on_open_file))
+            .on_action(cx.listener(Self::on_r_macro))
             .on_action(cx.listener(Self::on_save))
             .on_action(cx.listener(Self::on_save_as))
             .on_action(cx.listener(Self::on_close_tab))

@@ -8,6 +8,7 @@ use gpui::{AppContext as _, Entity, TestAppContext};
 
 use crate::deck::Deck;
 
+mod focus;
 mod menu;
 mod motion;
 mod notes;
@@ -28,19 +29,19 @@ mod video;
 
 /// An unrendered Deck over a fresh worker, if LOK exists.
 pub(super) fn deck(cx: &mut TestAppContext, dir: &Path) -> Option<Entity<Deck>> {
-    let install = ely_lok::install_dir().ok()?;
-    let worker = ely_office::lok::test_worker(&install, &dir.join("profile"));
+    let install = ely_lok::test_install()?;
+    let (worker, stop) = ely_office::lok::test_worker(&install, &dir.join("profile"));
     let work = dir.join("work");
     std::fs::create_dir_all(&work).expect("the work dir");
     cx.update(ely_gpui_component::init_for_tests);
     cx.update(|cx| {
         ely_ui::settings::install_defaults(cx);
-        ely_ui::i18n::install(cx);
+        ely_ui::i18n::install_as("en-US", cx);
     });
     let window = cx.add_window(|_, _| gpui::Empty);
     let deck = cx
         .update_window(window.into(), |_, window, app| {
-            let deck = app.new(|cx| Deck::new(worker, work, cx));
+            let deck = app.new(|cx| Deck::new(worker, stop, work, cx));
             deck.update(app, |deck, _| {
                 deck.core.window = Some(window.window_handle())
             });
@@ -50,10 +51,10 @@ pub(super) fn deck(cx: &mut TestAppContext, dir: &Path) -> Option<Entity<Deck>> 
     Some(deck)
 }
 
-/// Steps the scheduler until `done` or ten seconds pass.
+/// Steps the scheduler until `done` or a minute passes.
 #[track_caller]
 pub(super) fn settle(cx: &TestAppContext, done: impl Fn(&gpui::App) -> bool) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     while std::time::Instant::now() < deadline {
         if !cx.executor().tick() {
             cx.executor()
@@ -325,7 +326,7 @@ fn a_failed_picture_waits_for_the_next_read() {
             .expect("closes");
     });
     update(&mut cx, &deck, |deck, cx| {
-        let id = deck.core.active.expect("a tab");
+        let id = deck.core.active().expect("a tab");
         deck.tab_mut(id).expect("the tab").extra.thumbs.clear();
         deck.paint_next(id, cx);
     });

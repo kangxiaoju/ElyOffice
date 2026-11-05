@@ -13,7 +13,7 @@ fn open<'a>(
     cx.update(ely_gpui_component::init_for_tests);
     cx.update(|cx| {
         ely_ui::settings::install_defaults(cx);
-        ely_ui::i18n::install(cx);
+        ely_ui::i18n::install_as("en-US", cx);
     });
     let source = Source::decode(text.as_bytes().to_vec()).expect("reads");
     let saved = mark(&source.text);
@@ -152,7 +152,7 @@ fn the_shell_hears_a_load_it_subscribed_to(cx: &mut TestAppContext) {
     cx.update(ely_gpui_component::init_for_tests);
     cx.update(|cx| {
         ely_ui::settings::install_defaults(cx);
-        ely_ui::i18n::install(cx);
+        ely_ui::i18n::install_as("en-US", cx);
     });
     let heard = std::rc::Rc::new(std::cell::Cell::new(0));
     let (count, held) = (
@@ -276,4 +276,29 @@ fn a_broken_inline_gif_ends(cx: &mut TestAppContext) {
     let renderer = cx.update(|_, cx| cx.svg_renderer());
     let image = gpui::Image::from_bytes(gpui::ImageFormat::Gif, broken_gif());
     assert!(image.to_image_data(renderer).is_err());
+}
+
+#[gpui::test]
+fn a_wheel_beside_the_text_scrolls_it(cx: &mut TestAppContext) {
+    use gpui::{ScrollDelta, ScrollEvent, point, px};
+    let (data, files) = (tempfile::tempdir().expect("data"), tempfile::tempdir().expect("files"));
+    let path = files.path().join("long.md");
+    std::fs::write(&path, (0..300).map(|n| format!("Paragraph {n}.
+
+")).collect::<String>()).expect("a file");
+    let (desk, cx) = crate::desk::tests::start(cx, data.path());
+    crate::desk::tests::open(&desk, &path, cx);
+    let view = desk.read_with(cx, |desk, _| desk.active_view().expect("a tab"));
+    cx.run_until_parked();
+    // Left of the first block is margin, not text.
+    let block = cx.debug_bounds("markdown-block-0").expect("the first block");
+    let top = |cx: &mut VisualTestContext| cx.update(|_, app| view.read(app).place(app).top);
+    let before = top(cx);
+    cx.simulate_event(ScrollEvent {
+        position: point(block.left() - px(20.), block.center().y),
+        delta: ScrollDelta::Pixels(point(px(0.), px(-600.))),
+        ..Default::default()
+    });
+    cx.run_until_parked();
+    assert!(top(cx) > before, "the margin's wheel moved the text");
 }

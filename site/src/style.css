@@ -66,8 +66,10 @@ button:focus-visible {
 
 .hero .links {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: baseline;
-  gap: 1.5rem;
+  gap: 0.5rem 1.5rem;
 }
 
 a.icon svg {
@@ -113,6 +115,14 @@ footer {
   gap: 1rem;
   padding: 9rem 1.5rem 12rem;
   text-align: center;
+}
+
+footer .sources {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem 2.5rem;
+  margin: 0;
 }
 
 footer ul {

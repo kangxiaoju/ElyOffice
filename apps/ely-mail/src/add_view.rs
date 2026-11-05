@@ -284,6 +284,8 @@ fn advice(kind: Kind, checked: &ely_mail_engine::Checked) -> Option<&'static str
 
 /// Outlook.com's words for an account it holds.
 const OUTLOOK_HELD: &str = "User is authenticated but not connected";
+/// Exchange's words when the mailbox may not send by SMTP.
+const SMTP_DISABLED: &str = "SmtpClientAuthentication is disabled";
 
 /// A server's refusal in the reader's language, its words kept.
 pub fn failure(error: &Error, cx: &App) -> SharedString {
@@ -293,10 +295,13 @@ pub fn failure(error: &Error, cx: &App) -> SharedString {
         Error::Rejected(detail) if detail.contains(OUTLOOK_HELD) => {
             ("mail.error.outlook_held", detail.clone())
         }
+        Error::Rejected(detail) if detail.contains(SMTP_DISABLED) => {
+            ("mail.error.outlook_smtp_disabled", detail.clone())
+        }
         Error::Rejected(detail) => ("mail.error.rejected", detail.clone()),
         Error::Server(detail) => ("mail.error.server", detail.clone()),
         Error::Protocol(detail) => ("mail.error.protocol", detail.clone()),
-        Error::Timeout(step) => ("mail.error.timeout", (*step).to_owned()),
+        Error::Timeout(stage) => return crate::stage::quiet(*stage, cx),
         other => ("mail.error.other", other.to_string()),
     };
     text(cx, key, &[("detail", &detail)])

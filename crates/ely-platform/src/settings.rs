@@ -11,8 +11,8 @@ use crate::{AppId, lock::FileLock};
 
 mod shared;
 pub use shared::{
-    APPEARANCE, AUTHOR, Appearance, CHECK_UPDATES, LANGUAGE, Language, MOTION, Motion, OMARCHY_SYNC, Shared, UI_FONT, UI_TEXT_SIZE, UI_TEXT_SIZES,
-    DOC_ZOOM, DOC_ZOOMS, DocZoom, Sides, TWO_SIDED, word,
+    ALWAYS_SCROLLBARS, APPEARANCE, AUTHOR, Appearance, CHECK_UPDATES, LANGUAGE, LANGUAGES, Language, MOTION, Motion, OMARCHY_SYNC, Shared, UI_FONT, UI_TEXT_SIZE, UI_TEXT_SIZES,
+    DOC_ZOOM, DOC_ZOOMS, DocZoom, PAPER, Paper, Sides, TWO_SIDED, word,
 };
 
 /// The layout this build reads and writes.
@@ -36,7 +36,12 @@ impl Store {
 
     /// One app's own preferences.
     pub fn app(app: AppId) -> io::Result<Self> {
-        Ok(Self::at(crate::data_dir(app).map_err(io::Error::other)?.join("settings.json")))
+        Ok(Self::of(&crate::data_dir(app).map_err(io::Error::other)?))
+    }
+
+    /// The preferences kept in an app's data folder `dir`.
+    pub fn of(dir: &Path) -> Self {
+        Self::at(dir.join("settings.json"))
     }
 
     pub fn at(path: PathBuf) -> Self {

@@ -97,7 +97,7 @@ impl Render for LokView {
                         }
                     },
                     move |bounds, painted, window, app| {
-                        let mut drawn = false;
+                        let (mut drawn, mut failed) = (false, false);
                         for page in &painted.pages {
                             window.paint_quad(fill(*page, paper));
                             window.with_content_mask(
@@ -116,18 +116,20 @@ impl Render for LokView {
                                             )
                                         });
                                         match painted {
-                                            Ok(()) => {
-                                                drawn = true;
-                                                let tile = Arc::as_ptr(image) as usize;
-                                                if this.read(app).clock.awaits(tile) {
-                                                    this.update(app, |view, _| view.clock.drawn(tile));
-                                                }
+                                            Ok(()) => drawn = true,
+                                            Err(error) => {
+                                                failed = true;
+                                                log::error!("lok: tile paint failed: {error}")
                                             }
-                                            Err(error) => log::error!("lok: tile paint failed: {error}"),
                                         }
                                     }
                                 },
                             );
+                        }
+                        if let Some(generation) = painted.shows.filter(|_| !failed)
+                            && this.read(app).clock.waiting()
+                        {
+                            this.update(app, |view, _| view.clock.drawn(generation));
                         }
                         if drawn && !this.read(app).drawn {
                             this.update(app, |view, _| view.drawn = true);
@@ -233,6 +235,8 @@ pub(super) struct Painted {
     pub(super) marks: Vec<(Bounds<Pixels>, gpui::Hsla)>,
     /// A held table border's guide line.
     pub(super) guide: Option<Bounds<Pixels>>,
+    /// The generation a whole screen shows; None while waiting.
+    pub(super) shows: Option<u64>,
 }
 
 impl LokView {
@@ -308,28 +312,28 @@ impl LokView {
         }
         self.clamp_scroll();
         let geom = self.geom;
-        let (sx, sy) = self.scroll;
         let extent = self.extent();
         self.spare = self.slack();
         let pages = if self.pages.is_empty() {
-            vec![self.tile_screen_rect((0, 0, extent.0, extent.1))]
+            vec![self.tile_screen_rect(self.seen(), (0, 0, extent.0, extent.1))]
         } else {
             self.pages
                 .iter()
                 .map(|&page| self.screen_rect(page))
                 .collect()
         };
-        let (vw, vh) = (
-            geom.twips_of(bounds.size.width.into()),
-            geom.twips_of(bounds.size.height.into()),
-        );
-        let scale = (geom.tile_pixels(), TILE_TWIPS);
-        if self.shown != Some(((sx, sy, vw, vh), scale)) {
-            self.shown = Some(((sx, sy, vw, vh), scale));
+        let (visible, scale) = self.asked();
+        let (_, sy, vw, vh) = visible;
+        if self.moved() {
+            // Only up and down moves set the heading.
+            if let Some(((_, before, _, _), _)) = self.shown.filter(|&((_, y, _, _), was)| was == scale && sy != y) {
+                self.heading = (sy - before).signum();
+            }
+            self.shown = Some((visible, scale));
+            self.filling.get_or_insert_with(std::time::Instant::now);
             self.failed.clear();
-            self.send(input::Input::Visible((sx, sy, vw, vh), scale));
+            self.send(input::Input::Visible(visible, scale));
         }
-        let (ax, ay) = self.axes();
         let side = px(geom.px_of(TILE_TWIPS));
         let at = |vx: i32, vy: i32| {
             bounds.origin
@@ -338,43 +342,30 @@ impl LokView {
                     px(self.spare.1 + geom.px_of(vy)),
                 )
         };
-        let mut ready = Vec::new();
-        let mut missing = Vec::new();
+        let mut slots = Vec::new();
         self.on_screen.clear();
-        for (dx0, dx1, vx) in ax.panes(vw) {
-            for (dy0, dy1, vy) in ay.panes(vh) {
-                let clip = Bounds::from_corners(at(vx, vy), at(vx + dx1 - dx0, vy + dy1 - dy0));
-                let (kx0, ky0) = (dx0.div_euclid(TILE_TWIPS), dy0.div_euclid(TILE_TWIPS));
-                let (kx1, ky1) = (dx1.div_euclid(TILE_TWIPS), dy1.div_euclid(TILE_TWIPS));
-                for key in (kx0..=kx1).flat_map(|kx| (ky0..=ky1).map(move |ky| (kx, ky))) {
-                    if key.0 * TILE_TWIPS >= extent.0 || key.1 * TILE_TWIPS >= extent.1 {
-                        continue;
-                    }
-                    self.on_screen.push(key);
-                    match self.tiles.get(&key) {
-                        Some(tile) => {
-                            let origin =
-                                at(vx + key.0 * TILE_TWIPS - dx0, vy + key.1 * TILE_TWIPS - dy0);
-                            let place = Bounds {
-                                origin,
-                                size: size(side, side),
-                            };
-                            ready.push((place, Arc::clone(&tile.image), clip));
-                            if tile.stale {
-                                missing.push(key);
-                            }
-                        }
-                        None => missing.push(key),
-                    }
-                }
+        for (((dx0, dx1, vx), (dy0, dy1, vy)), keys) in self.tiling((vw, vh), extent) {
+            let clip = Bounds::from_corners(at(vx, vy), at(vx + dx1 - dx0, vy + dy1 - dy0));
+            for key in keys {
+                self.on_screen.push(key);
+                let origin = at(vx + key.0 * TILE_TWIPS - dx0, vy + key.1 * TILE_TWIPS - dy0);
+                slots.push((key, Bounds { origin, size: size(side, side) }, clip));
             }
         }
         self.keep_near((vw, vh));
-        for key in missing {
-            self.request_tile(key);
-        }
+        self.reveal_if_whole();
+        self.clock.showing();
+        self.want(vh / TILE_TWIPS + 1, extent);
+        let ready = slots
+            .into_iter()
+            .filter_map(|(key, place, clip)| self.tiles.get(&key).map(|tile| (place, Arc::clone(&tile.image), clip)))
+            .collect();
+        // A failed tile leaves the screen short.
+        let fresh = self.on_screen.iter().all(|key| self.tiles.get(key).is_some_and(|tile| !tile.stale));
+        let shows = fresh.then_some(self.generation);
+        let (pages, tiles) = self.screen(bounds.origin, pages, ready);
         let rect = |rect: Rect| self.screen_rect(rect);
-        let caret = self.text_caret().filter(|_| self.cursor_visible);
+        let caret = self.text_caret(self.seen()).filter(|_| self.cursor_visible);
         let half = self.handle_size / 2.0;
         let frame = self.frame().map(|frame| {
             let squares = handles::points(frame)
@@ -388,13 +379,14 @@ impl LokView {
         });
         Painted {
             pages,
-            tiles: ready,
+            tiles,
             selection: self.text_selection(),
             caret,
             cell: self.cell.cursor.map(rect),
             frame,
             marks: self.marks(),
             guide: self.guide(),
+            shows,
         }
     }
 }

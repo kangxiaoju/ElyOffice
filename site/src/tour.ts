@@ -222,10 +222,13 @@ export function tour(hero: HTMLElement): { section: HTMLElement; host: HTMLEleme
 
   const copy = document.createElement("div");
   copy.className = "copy";
+  const heads: HTMLElement[] = [];
   const articles = apps.map((p, i) => {
     const article = document.createElement("article");
     const h2 = document.createElement("h2");
     h2.textContent = p.name;
+    h2.tabIndex = -1;
+    heads.push(h2);
     const get = said("a", "download");
     get.className = "get";
     get.href = RELEASES;
@@ -277,7 +280,9 @@ export function tour(hero: HTMLElement): { section: HTMLElement; host: HTMLEleme
     span = h;
     const below = hero.offsetTop + hero.offsetHeight + 32;
     const whole = fit(desk, [24, below, w - 24, h - 32], 2);
-    const area: Box = w <= NARROW ? [16, h * 0.04, w - 52, h * 0.56] : [w * 0.42, h * 0.08, w - 88, h * 0.92];
+    // Copy below the model only on a narrow upright screen.
+    const upright = w <= NARROW && h >= w;
+    const area: Box = upright ? [16, h * 0.04, w - 52, h * 0.56] : [w * 0.42, h * 0.08, w - 88, h * 0.92];
     cams = [whole, ...homes.map((box) => fit(box, area, 8)), whole];
   };
 
@@ -299,6 +304,7 @@ export function tour(hero: HTMLElement): { section: HTMLElement; host: HTMLEleme
     }
     clips[current].classList.add("up");
     articles[current].classList.add("current");
+    if (current === arriving) land();
     steps[current].setAttribute("aria-current", "step");
     if (!still() && !document.hidden) start(clips[current]);
   };
@@ -328,6 +334,19 @@ export function tour(hero: HTMLElement): { section: HTMLElement; host: HTMLEleme
     const at = Math.round(p);
     choose(at >= 1 && at < last ? at - 1 : -1);
   };
+
+  // A link's arrival hands Tab to its region.
+  let arriving = -1;
+  const land = () => {
+    heads[arriving].focus({ preventScroll: true });
+    arriving = -1;
+  };
+  const arrive = () => {
+    arriving = apps.findIndex((p) => `#${p.name.toLowerCase()}` === location.hash);
+    if (arriving >= 0 && arriving === current) land();
+  };
+  addEventListener("hashchange", arrive);
+  arrive();
 
   const later = () => {
     if (queued) return;

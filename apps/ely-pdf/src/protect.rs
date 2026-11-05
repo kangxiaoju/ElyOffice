@@ -48,7 +48,11 @@ impl Viewer {
     pub(crate) fn failed(&self, error: &io::Error, cx: &mut App) {
         match ely_pdf_engine::refused(error) {
             Some(needed) => self.toast(crate::view::restricted(needed, cx), Severity::Warning, cx),
-            None => self.panel_failed(&error.to_string(), cx),
+            None => {
+                log::error!("pdf: a step failed ({:?})", error.kind());
+                let text = Self::text(cx, "office.error.panel", &[("error", &ely_ui::i18n::error(cx, error))]);
+                self.toast_unlogged(text, Severity::Danger, cx);
+            }
         }
     }
 
@@ -140,7 +144,7 @@ impl Viewer {
             return;
         };
         let Some(dir) = ely_office::folder(open) else {
-            return self.panel_failed("no documents folder", cx);
+            return self.panel_failed(&ely_ui::i18n::text(cx, "error.no_documents", &[]), cx);
         };
         let tail = Self::text(cx, if lock.is_some() { "pdf.protect.tail" } else { "pdf.protect.bare" }, &[]);
         let chosen = cx.prompt_for_new_path(&dir, Some(&beside(&open.name, &tail)));

@@ -76,8 +76,9 @@ impl OfficeRuntime {
             _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "the loaded document does not match the requested office kind")),
         }
         let geometry = layout(&mut worker, &doc)?;
+        let feed = worker.feed();
         drop(worker);
-        let surface = LokView::open(Arc::clone(&self.worker), doc.clone(), geometry, cx);
+        let surface = LokView::open(Arc::clone(&self.worker), doc.clone(), geometry, feed, cx);
         surface.update(cx, |view, _| view.set_read_only(access == Access::ReadOnly));
         Ok(OfficeSession {
             worker: Arc::clone(&self.worker),

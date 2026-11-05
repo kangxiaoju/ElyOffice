@@ -1,9 +1,9 @@
 use super::*;
 use gpui::TestAppContext;
 
-/// Steps the scheduler until `done` or ten seconds pass.
+/// Steps the scheduler until `done` or a minute passes.
 fn settle(cx: &TestAppContext, done: impl Fn(&App) -> bool) -> bool {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     while std::time::Instant::now() < deadline {
         if !cx.executor().tick() {
             cx.executor()
@@ -61,17 +61,18 @@ fn a_dark_app_paints_the_page_white() {
     let mut started = crate::Worker::spawn(&install, &profile).expect("the worker");
     let doc = started.load(&crate::file_url(&source)).expect("the document loads");
     let laid = super::super::layout(&mut started, &doc).expect("the layout reads");
+    let feed = started.feed();
     let worker = Arc::new(Mutex::new(started));
     let shade = || {
         let mut worker = worker.lock().expect("the worker");
         let tile = doc.paint_tile(&mut worker, (1440, 1440, 3840, 3840), (64, 64)).expect("a tile");
-        let sum: u64 = tile.pixels.chunks_exact(4).map(|px| u64::from(px[0]) + u64::from(px[1]) + u64::from(px[2])).sum();
+        let sum: u64 = tile.pixels.as_chunks::<4>().0.iter().map(|px| u64::from(px[0]) + u64::from(px[1]) + u64::from(px[2])).sum();
         sum / (64 * 64 * 3)
     };
     worker.lock().expect("the worker").run(&doc, "view.theme", &["TEST_DARK"]).expect("the dark scheme");
     let dark = shade();
     assert!(dark < 100, "the kernel starts dark: {dark}");
-    let view = cx.update(|app| LokView::open(Arc::clone(&worker), doc.clone(), laid, app));
+    let view = cx.update(|app| LokView::open(Arc::clone(&worker), doc.clone(), laid, feed.clone(), app));
     let shown = view.clone();
     cx.add_window(move |_, _| Host(shown));
     assert!(

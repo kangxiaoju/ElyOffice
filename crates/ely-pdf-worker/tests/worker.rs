@@ -40,7 +40,7 @@ fn pages_measure_render_and_read_their_text() {
         .render(doc, 0, (2.0, 0), [0, 0, 600, 300])
         .expect("renders").bgra;
     assert_eq!(tile.len(), 600 * 300 * 4);
-    let dark = tile.chunks_exact(4).filter(|p| p[0] < 128).count();
+    let dark = tile.as_chunks::<4>().0.iter().filter(|p| p[0] < 128).count();
     assert!(dark > 100, "text shows: {dark}");
     // A quarter turn makes the page tall side wide.
     assert!(
@@ -149,15 +149,8 @@ fn every_hit_counts_once_however_many_or_however_split() {
 #[cfg(unix)]
 #[test]
 fn a_worker_from_other_sources_is_refused() {
-    let dir = tempfile::tempdir().expect("a temp dir");
     // Answers HELLO with someone else's stamp.
-    let stale = dir.path().join("stale-worker");
-    std::fs::write(
-        &stale,
-        "#!/usr/bin/env python3\nimport struct, sys\nhead = sys.stdin.buffer.read(13)\nstamp = b'old'\nbody = struct.pack('<I', len(stamp)) + stamp\nsys.stdout.buffer.write(struct.pack('<I', len(body)) + bytes([100]) + head[5:13] + body)\nsys.stdout.flush()\n",
-    )
-    .expect("writes");
-    std::fs::set_permissions(&stale, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("executable");
+    let stale = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/pdf/stale-worker");
     let refused = Worker::spawn_from(&stale).err().expect("refused");
     assert!(refused.to_string().contains("other sources"), "{refused}");
 }
@@ -165,15 +158,8 @@ fn a_worker_from_other_sources_is_refused() {
 #[cfg(unix)]
 #[test]
 fn a_reply_to_another_request_is_refused() {
-    let dir = tempfile::tempdir().expect("a temp dir");
     // Answers HELLO under the next request's id.
-    let crossed = dir.path().join("crossed-worker");
-    std::fs::write(
-        &crossed,
-        "#!/usr/bin/env python3\nimport struct, sys\nhead = sys.stdin.buffer.read(13)\nasked = struct.unpack('<Q', head[5:13])[0]\nbody = struct.pack('<I', 3) + b'any'\nsys.stdout.buffer.write(struct.pack('<I', len(body)) + bytes([100]) + struct.pack('<Q', asked + 1) + body)\nsys.stdout.flush()\n",
-    )
-    .expect("writes");
-    std::fs::set_permissions(&crossed, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("executable");
+    let crossed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/pdf/crossed-worker");
     let refused = Worker::spawn_from(&crossed).err().expect("refused");
     assert!(refused.to_string().contains("not 1"), "{refused}");
 }
@@ -240,12 +226,12 @@ fn a_failed_open_keeps_no_memory() {
     };
     // MuPDF's 256 MB store fills first; then nothing grows.
     for _ in 0..70 {
-        let refused = worker.open(&png).expect_err("not a PDF");
-        assert!(refused.to_string().contains("not a PDF"), "{refused}");
+        let refused = worker.open(&png).expect_err("neither a PDF nor an EPUB");
+        assert_eq!(refused.to_string(), "pdf.error.not_pdf");
     }
     let before = rss(worker.pid());
     for _ in 0..50 {
-        assert!(worker.open(&png).is_err(), "not a PDF");
+        assert!(worker.open(&png).is_err(), "neither a PDF nor an EPUB");
     }
     let grown = rss(worker.pid()).saturating_sub(before);
     assert!(grown < 40_000, "50 more failed opens of a 4 MB image kept {grown} KiB");

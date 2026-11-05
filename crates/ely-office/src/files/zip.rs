@@ -3,7 +3,7 @@
 use std::io::{self, Read};
 
 fn bad() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, "a damaged zip directory")
+    ely_ipc::Worded::error(io::ErrorKind::InvalidData, "office.error.damaged", &[])
 }
 
 fn u16_at(bytes: &[u8], at: usize) -> io::Result<usize> {
@@ -37,7 +37,8 @@ fn entries(bytes: &[u8]) -> io::Result<Vec<Entry>> {
         let skip = u16_at(bytes, at + 30)? + u16_at(bytes, at + 32)?;
         let name = bytes.get(at + 46..at + 46 + name_len).ok_or_else(bad)?;
         entries.push(Entry {
-            name: String::from_utf8_lossy(name).into_owned(),
+            // A backslash is a slash, as the kernel reads it.
+            name: String::from_utf8_lossy(name).replace('\\', "/"),
             method: u16_at(bytes, at + 10)?,
             size: u32_at(bytes, at + 20)?,
             local: u32_at(bytes, at + 42)?,
@@ -67,6 +68,6 @@ pub(super) fn read(bytes: &[u8], name: &str) -> io::Result<Option<Vec<u8>>> {
             flate2::read::DeflateDecoder::new(data).read_to_end(&mut out)?;
             Ok(Some(out))
         }
-        method => Err(io::Error::new(io::ErrorKind::InvalidData, format!("{name} uses zip method {method}"))),
+        method => Err(ely_ipc::Worded::error(io::ErrorKind::InvalidData, "office.error.zip_method", &[("name", name), ("method", &method.to_string())])),
     }
 }
