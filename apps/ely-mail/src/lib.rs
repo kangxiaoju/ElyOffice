@@ -36,6 +36,7 @@ mod rules;
 mod seeking;
 mod side;
 mod storage;
+mod stage;
 mod syncing;
 mod view;
 mod writing;

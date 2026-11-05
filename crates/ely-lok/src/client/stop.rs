@@ -40,8 +40,8 @@ impl Stopper {
 impl Worker {
     /// A new worker on this one's build and profile, unchecked.
     pub fn relaunch(&self) -> io::Result<Self> {
-        let (install, profile, dev) = &self.start;
-        Self::spawn_mode(install, profile, *dev)
+        let (binary, install, profile, dev) = &self.start;
+        Self::spawn_mode(binary, install, profile, *dev)
     }
 
     /// Ends this worker's process without this worker's lock.

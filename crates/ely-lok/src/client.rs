@@ -49,8 +49,8 @@ pub struct Worker {
     pub(crate) stopper: Stopper,
     /// The name new comments sign with, once set.
     author: Option<String>,
-    /// The build, profile and probes it started with.
-    start: (PathBuf, PathBuf, bool),
+    /// The binary, build, profile and probes it started with.
+    start: (PathBuf, PathBuf, PathBuf, bool),
 }
 
 /// One painted tile and the generation it matches (LOK-03).
@@ -197,7 +197,7 @@ impl Worker {
             stderr,
             check: Check::Pending(profile_dir.to_path_buf()),
             author: None,
-            start: (install.to_path_buf(), profile_dir.to_path_buf(), dev),
+            start: (worker_bin.to_path_buf(), install.to_path_buf(), profile_dir.to_path_buf(), dev),
         };
         Ok(worker)
     }
