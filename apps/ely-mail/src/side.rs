@@ -182,7 +182,7 @@ impl Render for Side {
                     }),
             )
             .item(
-                MenuItem::new(text(cx, "mail.write.new", &[]))
+                MenuItem::new(text(cx, "mail.write.title", &[]))
                     .icon(IconName::Pencil)
                     .on_click(move |_, cx| {
                         writing.update(cx, |mail, cx| mail.write_new(cx)).ok();
