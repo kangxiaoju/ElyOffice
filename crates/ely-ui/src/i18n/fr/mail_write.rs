@@ -3,8 +3,6 @@
 pub(super) const FR: &[(&str, &str)] = &[
     ("mail.write.title", "Nouveau message"),
     ("mail.write.from", "De"),
-    ("mail.write.plain", "Texte brut"),
-    ("mail.write.markdown", "Markdown"),
     ("mail.write.wrote", "Le {date}, {sender} a écrit :"),
     ("mail.write.wrote_undated", "{sender} a écrit :"),
     ("mail.write.forwarded", "---------- Message transféré ----------"),

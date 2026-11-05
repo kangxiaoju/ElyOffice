@@ -3,8 +3,6 @@
 pub(super) const KO: &[(&str, &str)] = &[
     ("mail.write.title", "새 메시지"),
     ("mail.write.from", "보낸 사람"),
-    ("mail.write.plain", "일반 텍스트"),
-    ("mail.write.markdown", "Markdown"),
     ("mail.write.wrote", "{date}에 {sender} 님이 작성:"),
     ("mail.write.wrote_undated", "{sender} 님이 작성:"),
     ("mail.write.forwarded", "---------- 전달된 메시지 ----------"),

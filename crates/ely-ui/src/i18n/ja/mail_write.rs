@@ -3,8 +3,6 @@
 pub(super) const JA: &[(&str, &str)] = &[
     ("mail.write.title", "新規メッセージ"),
     ("mail.write.from", "差出人"),
-    ("mail.write.plain", "プレーンテキスト"),
-    ("mail.write.markdown", "Markdown"),
     ("mail.write.wrote", "{date}、{sender} さんは書きました:"),
     ("mail.write.wrote_undated", "{sender} さんは書きました:"),
     ("mail.write.forwarded", "---------- 転送メッセージ ----------"),

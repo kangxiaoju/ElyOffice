@@ -3,8 +3,6 @@
 pub(super) const VI: &[(&str, &str)] = &[
     ("mail.write.title", "Thư mới"),
     ("mail.write.from", "Từ"),
-    ("mail.write.plain", "Văn bản thuần"),
-    ("mail.write.markdown", "Markdown"),
     ("mail.write.wrote", "Vào {date}, {sender} đã viết:"),
     ("mail.write.wrote_undated", "{sender} đã viết:"),
     ("mail.write.forwarded", "---------- Thư được chuyển tiếp ----------"),
