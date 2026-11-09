@@ -1894,7 +1894,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 [[package]]
 name = "ely-account"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "gpui-pre",
@@ -1905,7 +1905,7 @@ dependencies = [
 [[package]]
 name = "ely-agent"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-chat",
  "ely-collab",
@@ -1930,7 +1930,7 @@ dependencies = [
 [[package]]
 name = "ely-calendar"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "gpui-pre",
@@ -1941,7 +1941,7 @@ dependencies = [
 [[package]]
 name = "ely-canvas"
 version = "0.3.0"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "base64 0.22.1",
  "ely-core",
@@ -1952,7 +1952,7 @@ dependencies = [
 [[package]]
 name = "ely-charts"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "gpui-pre",
@@ -1964,7 +1964,7 @@ dependencies = [
 [[package]]
 name = "ely-chat"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "ely-documents",
@@ -1980,7 +1980,7 @@ dependencies = [
 [[package]]
 name = "ely-collab"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "ely-documents",
@@ -1994,7 +1994,7 @@ dependencies = [
 [[package]]
 name = "ely-core"
 version = "0.2.0"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "anyhow",
  "barcoders",
@@ -2024,7 +2024,7 @@ dependencies = [
 [[package]]
 name = "ely-dashboard"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "gpui-pre",
@@ -2035,7 +2035,7 @@ dependencies = [
 [[package]]
 name = "ely-debug"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-charts",
  "ely-core",
@@ -2047,7 +2047,7 @@ dependencies = [
 [[package]]
 name = "ely-desktop"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "anyhow",
  "ely-core",
@@ -2069,7 +2069,7 @@ dependencies = [
 [[package]]
 name = "ely-devtools"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-canvas",
  "ely-chat",
@@ -2108,7 +2108,7 @@ dependencies = [
 [[package]]
 name = "ely-documents"
 version = "0.2.0"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2142,7 +2142,7 @@ dependencies = [
 [[package]]
 name = "ely-editor"
 version = "0.2.0"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-charts",
  "ely-core",
@@ -2167,7 +2167,7 @@ dependencies = [
 [[package]]
 name = "ely-files"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "gpui-pre",
@@ -2197,7 +2197,7 @@ dependencies = [
 [[package]]
 name = "ely-finance"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-charts",
  "ely-core",
@@ -2210,7 +2210,7 @@ dependencies = [
 [[package]]
 name = "ely-generative"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-charts",
  "ely-chat",
@@ -2226,7 +2226,7 @@ dependencies = [
 [[package]]
 name = "ely-git"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "ely-editor",
@@ -2238,7 +2238,7 @@ dependencies = [
 [[package]]
 name = "ely-gpui-component"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "anyhow",
  "ely-account",
@@ -2277,7 +2277,7 @@ dependencies = [
 [[package]]
 name = "ely-interaction"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "gpui-pre",
@@ -2316,7 +2316,7 @@ dependencies = [
 [[package]]
 name = "ely-mail"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-chat",
  "ely-core",
@@ -2398,7 +2398,7 @@ dependencies = [
 [[package]]
 name = "ely-maps"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "anyhow",
  "ely-canvas",
@@ -2439,7 +2439,7 @@ dependencies = [
 [[package]]
 name = "ely-media"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "ely-documents",
@@ -2453,7 +2453,7 @@ dependencies = [
 [[package]]
 name = "ely-messaging"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "ely-media",
@@ -2467,7 +2467,7 @@ dependencies = [
 [[package]]
 name = "ely-misc"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-canvas",
  "ely-core",
@@ -2512,7 +2512,7 @@ dependencies = [
 [[package]]
 name = "ely-onboarding"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "ely-documents",
@@ -2616,7 +2616,7 @@ dependencies = [
 [[package]]
 name = "ely-project"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-calendar",
  "ely-core",
@@ -2631,7 +2631,7 @@ dependencies = [
 [[package]]
 name = "ely-rendering"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "gpui-pre",
@@ -2643,7 +2643,7 @@ dependencies = [
 [[package]]
 name = "ely-settings"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "anyhow",
  "ely-canvas",
@@ -2699,7 +2699,7 @@ dependencies = [
 [[package]]
 name = "ely-terminal"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -2717,7 +2717,7 @@ dependencies = [
 [[package]]
 name = "ely-tooling"
 version = "0.1.1"
-source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=3022f3b626356cbbe765242fbcad5c91f9ab1ba0#3022f3b626356cbbe765242fbcad5c91f9ab1ba0"
+source = "git+https://github.com/kangxiaoju/Ely-GPUI-Components.git?rev=b93c2b258b7c6d9b7d046240953ff2ee3013dff7#b93c2b258b7c6d9b7d046240953ff2ee3013dff7"
 dependencies = [
  "ely-core",
  "ely-devtools",
