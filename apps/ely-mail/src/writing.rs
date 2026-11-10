@@ -16,11 +16,14 @@ use crate::{
     mail::{Mail, text},
 };
 
+const EDIT_AS_NEW_INCOMPLETE: &str = "download the complete message and all attachments before editing as new";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum How {
     Reply,
     ReplyAll,
     Forward,
+    EditAsNew,
 }
 
 /// An account one may send from.
@@ -128,7 +131,7 @@ pub fn senders(store: &Store) -> Result<Vec<Sender>> {
         .collect()
 }
 
-fn answered(store: &Store, id: MessageId, how: How) -> Result<Opening> {
+pub(super) fn answered(store: &Store, id: MessageId, how: How) -> Result<Opening> {
     let senders = senders(store)?;
     let stored = store.get(id)?;
     let from = store.account_of(stored.mailbox)?;
@@ -141,15 +144,26 @@ fn answered(store: &Store, id: MessageId, how: How) -> Result<Opening> {
         Some(raw) => (raw, true),
         None => (store.head(id)?, false),
     };
+    if how == How::EditAsNew && (!whole || !stored.missing.is_empty()) {
+        return Err(Error::Invalid(EDIT_AS_NEW_INCOMPLETE.into()));
+    }
     let mail = read(&bytes)?;
     let start = match how {
         How::Reply => compose::answer(&mail, &me, false),
         How::ReplyAll => compose::answer(&mail, &me, true),
         How::Forward => compose::forward(&mail),
+        How::EditAsNew => Start {
+            to: mail.to.clone(),
+            cc: mail.cc.clone(),
+            subject: mail.subject.clone().unwrap_or_default(),
+            in_reply_to: None,
+            references: Vec::new(),
+        },
     };
-    let text = match whole {
-        true => compose::original(&mail),
-        false => String::new(),
+    let text = if whole && how != How::EditAsNew {
+        compose::original(&mail)
+    } else {
+        String::new()
     };
     let (files, missing) = match how {
         How::Forward => {
@@ -162,6 +176,7 @@ fn answered(store: &Store, id: MessageId, how: How) -> Result<Opening> {
                 mail.attachments.iter().cloned().partition(waiting);
             (here, gone.len())
         }
+        How::EditAsNew => (mail.attachments.iter().chain(&mail.inline).cloned().collect(), 0),
         _ => (Vec::new(), 0),
     };
     Ok(Opening {
@@ -270,9 +285,12 @@ impl Mail {
         self.with_store(
             cx,
             move |store| answered(store, id, how),
-            |mail, read, cx| match read {
+            move |mail, read, cx| match read {
                 Ok(opening) => {
                     mail.open_compose(opening, cx);
+                }
+                Err(error) if how == How::EditAsNew && error == Error::Invalid(EDIT_AS_NEW_INCOMPLETE.into()).to_string() => {
+                    mail.toast(text(cx, "mail.write.edit_as_new_incomplete", &[]), ely_gpui_component::primitives::Severity::Warning, cx);
                 }
                 Err(error) => mail.failed("mail.write.unread", &error, cx),
             },

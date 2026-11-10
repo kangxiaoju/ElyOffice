@@ -41,6 +41,20 @@ pub struct Summary {
     pub attachments: Option<u32>,
 }
 
+/// The last row's stable descending date/id position, including undated mail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MessageCursor {
+    pub date: Option<i64>,
+    pub id: MessageId,
+}
+
+/// A bounded list and its continuation; `None` means the end was reached.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MessagePage {
+    pub messages: Vec<Summary>,
+    pub next: Option<MessageCursor>,
+}
+
 impl Filter {
     /// The narrowing, as SQL over `m`.
     pub(super) fn clauses(&self) -> Vec<String> {
@@ -65,6 +79,41 @@ const FLAGGED: &str = "EXISTS (SELECT 1 FROM flags f WHERE f.message = m.id \
                        AND f.flag = '\\Flagged' COLLATE NOCASE)";
 
 impl Store {
+    /// At most `limit` rows, with one SQL lookahead; the cursor belongs to this query.
+    pub fn list_page(&self, scope: Scope, filter: Filter, after: Option<MessageCursor>, limit: usize) -> Result<MessagePage> {
+        let mut clauses = vec!["NOT m.erasing".to_owned()];
+        let id = match scope { Scope::Mailbox(id) => Some(id.0), Scope::Inboxes => None };
+        clauses.push(match scope {
+            Scope::Mailbox(_) => "coalesce(m.moving, m.mailbox) = ?1".to_owned(),
+            Scope::Inboxes => "b.role = 'inbox'".to_owned(),
+        });
+        clauses.extend(filter.clauses());
+        let values: Vec<&dyn ToSql> = id.as_ref().map(|id| vec![id as &dyn ToSql]).unwrap_or_default();
+        self.summary_page(&clauses.join(" AND "), &values, after, limit)
+    }
+
+    pub(super) fn summary_page(&self, clauses: &str, values: &[&dyn ToSql], after: Option<MessageCursor>, limit: usize) -> Result<MessagePage> {
+        if limit == 0 { return Err(Error::Invalid("a page needs a positive limit".into())); }
+        let mut clauses = clauses.to_owned();
+        let mut values = values.to_vec();
+        let date = after.and_then(|cursor| cursor.date);
+        let id = after.map(|cursor| cursor.id.0);
+        if after.is_some() {
+            let n = values.len();
+            values.push(&date);
+            values.push(&id);
+            clauses.push_str(&format!(" AND ((?{} IS NOT NULL AND (m.date < ?{} OR m.date IS NULL)) OR (m.date IS ?{} AND m.id < ?{}))", n + 1, n + 1, n + 1, n + 2));
+        }
+        let bound = i64::try_from(limit).ok().and_then(|limit| limit.checked_add(1)).ok_or_else(|| Error::Invalid("page limit too large".into()))?;
+        values.push(&bound);
+        let mut messages = self.summaries_bounded(&clauses, &values, &format!(" LIMIT ?{}", values.len()))?;
+        let next = if messages.len() > limit {
+            messages.truncate(limit);
+            messages.last().map(|row| MessageCursor { date: row.date, id: row.id })
+        } else { None };
+        Ok(MessagePage { messages, next })
+    }
+
     /// Newest first; SQLite sorts undated last.
     pub fn list(&self, scope: Scope, filter: Filter) -> Result<Vec<Summary>> {
         let mut clauses = vec!["NOT m.erasing".to_owned()];
@@ -86,12 +135,16 @@ impl Store {
 
     /// Messages meeting `clauses`, newest first.
     pub(super) fn summaries(&self, clauses: &str, values: &[&dyn ToSql]) -> Result<Vec<Summary>> {
+        self.summaries_bounded(clauses, values, "")
+    }
+
+    fn summaries_bounded(&self, clauses: &str, values: &[&dyn ToSql], tail: &str) -> Result<Vec<Summary>> {
         let sql = format!(
             "SELECT m.id, m.sender, m.subject, m.date, m.attachments, {SEEN}, {FLAGGED},
                     b.account, b.id, b.role, m.uidl IS NOT NULL
              FROM messages m JOIN mailboxes b ON b.id = coalesce(m.moving, m.mailbox)
              WHERE {clauses}
-             ORDER BY m.date DESC, m.id DESC"
+             ORDER BY m.date DESC, m.id DESC{tail}"
         );
         let mut query = self.conn.prepare(&sql)?;
         let rows = query.query_map(values, |row| {

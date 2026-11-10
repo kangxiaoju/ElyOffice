@@ -1,7 +1,7 @@
 //! The message list and the reading pane (C12.9).
 
 use ely_gpui_component::{
-    buttons::{ToggleGroup, ToggleItem},
+    buttons::{Button, ToggleGroup, ToggleItem},
     feedback::{EmptyState, ErrorView},
     layout::SplitPane,
     mail::MailList,
@@ -94,8 +94,11 @@ impl Mail {
                 EmptyState::new("mail-search-none", IconName::SearchX, none).into_any_element()
             }
             Some(Ok(mails)) => {
-                let (this, starring) = (cx.weak_entity(), cx.weak_entity());
-                let list = MailList::new("mail-list", mails.clone())
+                let (this, starring, loading) = (cx.weak_entity(), cx.weak_entity(), cx.weak_entity());
+                let list = MailList::new(gpui::SharedString::from(format!("mail-list-{}", self.open.key())), mails.clone())
+                    .on_load_more(self.listing.loading, self.listing.has_more && self.listing.page_error.is_none(), move |_, cx| {
+                        loading.update(cx, |mail, cx| mail.load_more_mail(cx)).ok();
+                    })
                     .selected(self.listing.selected.clone())
                     .on_select(move |keys, _, cx| {
                         this.update(cx, |mail, cx| mail.select(keys, cx)).ok();
@@ -127,6 +130,21 @@ impl Mail {
                     .child(toggles)
             }))
             .child(div().flex_1().min_h_0().child(list))
+            .children(self.listing.page_error.as_ref().map(|detail| {
+                let this = cx.weak_entity();
+                div().px_2().py_2()
+                    .child(detail.clone())
+                    .child(Button::new("mail-page-retry", text(cx, "mail.outbox.retry", &[]))
+                        .on_click(move |_, _, cx| {
+                            this.update(cx, |mail, cx| {
+                                if mail.listing.has_more && matches!(mail.listing.mails, Some(Ok(_))) {
+                                    mail.load_more_mail(cx);
+                                } else {
+                                    mail.read_mail(cx);
+                                }
+                            }).ok();
+                        }))
+            }))
             .into_any_element()
     }
 }

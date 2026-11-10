@@ -61,6 +61,14 @@ impl Mail {
                 .detail(detail.to_owned())
                 .into_any_element()
         };
+        if self.initializing {
+            return EmptyState::new(
+                "mail-opening",
+                IconName::Mail,
+                text(cx, "mail.reader.reading", &[]),
+            )
+            .into_any_element();
+        }
         if let Err(detail) = &self.store {
             return error("mail.store.unopened", detail, cx);
         }

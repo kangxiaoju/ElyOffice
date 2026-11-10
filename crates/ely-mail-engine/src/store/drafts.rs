@@ -198,6 +198,15 @@ impl Store {
         rows.map(|row| row?).collect()
     }
 
+    /// A bounded newest-first prefix for the visible draft list, not sync work.
+    pub fn drafts_prefix(&self, limit: usize) -> Result<Vec<Shelved>> {
+        let limit = i64::try_from(limit).map_err(|_| Error::Invalid("draft page too large".into()))?;
+        let sql = format!("SELECT {COLUMNS} FROM drafts ORDER BY saved DESC, id DESC LIMIT ?1");
+        let mut query = self.conn.prepare(&sql)?;
+        let rows = query.query_map([limit], shelved)?;
+        rows.map(|row| row?).collect()
+    }
+
     pub fn draft(&self, id: DraftId) -> Result<Option<Shelved>> {
         let sql = format!("SELECT {COLUMNS} FROM drafts WHERE id = ?1");
         self.conn

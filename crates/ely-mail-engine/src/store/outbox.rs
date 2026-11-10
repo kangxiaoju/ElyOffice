@@ -163,6 +163,15 @@ impl Store {
         rows.map(|row| row?).collect()
     }
 
+    /// A bounded oldest-first prefix for the visible list; delivery is independent.
+    pub fn outbox_prefix(&self, limit: usize) -> Result<Vec<Queued>> {
+        let limit = i64::try_from(limit).map_err(|_| Error::Invalid("outbox page too large".into()))?;
+        let sql = format!("SELECT {COLUMNS} FROM outbox ORDER BY id LIMIT ?1");
+        let mut query = self.conn.prepare(&sql)?;
+        let rows = query.query_map([limit], queued)?;
+        rows.map(|row| row?).collect()
+    }
+
     pub fn queued(&self, id: OutboxId) -> Result<Queued> {
         let sql = format!("SELECT {COLUMNS} FROM outbox WHERE id = ?1");
         self.conn

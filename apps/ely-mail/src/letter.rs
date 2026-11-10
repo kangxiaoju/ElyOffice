@@ -77,10 +77,13 @@ pub fn body(missing: &[String], mut mail: ely_mail_engine::Mail, words: &Words) 
             (name, (!waiting).then_some(part.bytes.len() as u64))
         })
         .collect();
-    // Some senders (including older Yu versions) mark CID images as attachments.
-    // Keep their download rows, but also make their bytes available to CID lookup.
-    mail.inline.extend(mail.attachments.into_iter()
-        .filter(|part| part.content_id.is_some() && part.content_type.starts_with("image/")));
+    // CID resources can carry generic or mislabeled MIME metadata. Keep download
+    // rows; `held` validates actual raster bytes before any resource is drawn.
+    mail.inline.extend(
+        mail.attachments
+            .into_iter()
+            .filter(|part| part.content_id.is_some()),
+    );
     let read = page::read(&mail.shown, &mail.inline);
     let snippet = read.snippet(SNIPPET);
     let mut held = Held {
@@ -107,18 +110,37 @@ pub fn held(
     bytes: Vec<u8>,
     words: &Words,
 ) -> Result<HeldPicture, SharedString> {
-    let kind = match content_type.to_ascii_lowercase().as_str() {
-        "image/jpg" | "image/pjpeg" => "image/jpeg".to_owned(),
-        other => other.to_owned(),
-    };
-    let format = ImageFormat::from_mime_type(&kind).ok_or_else(|| words.not_picture.clone())?;
-    // SVG may load files; mail never draws it.
-    if format == ImageFormat::Svg {
+    // MIME parameters/case are metadata, never proof that the bytes are safe.
+    // SVG may load files; mail never draws it, even under a raster MIME type.
+    let kind = content_type.split(';').next().unwrap_or_default().trim();
+    if kind.eq_ignore_ascii_case("image/svg+xml") {
         return Err(words.svg.clone());
     }
     if bytes.is_empty() {
         return Err(words.waiting.clone());
     }
+    if bytes.len() as u64 > ely_mail_engine::fetch::LARGEST {
+        return Err(words.broken.clone());
+    }
+    let detected = image::guess_format(&bytes).map_err(|_| words.not_picture.clone())?;
+    let format = match detected {
+        image::ImageFormat::Png => ImageFormat::Png,
+        image::ImageFormat::Jpeg => ImageFormat::Jpeg,
+        image::ImageFormat::Gif => ImageFormat::Gif,
+        image::ImageFormat::Bmp => ImageFormat::Bmp,
+        image::ImageFormat::WebP => ImageFormat::Webp,
+        _ => return Err(words.not_picture.clone()),
+    };
+    // Both letter building and permitted remote fetches call this off-thread.
+    // A signature alone can be truncated/corrupt; decode with explicit bounds
+    // before handing the original bytes to the renderer's lazy asset cache.
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(64 << 20);
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(&bytes), detected);
+    reader.limits(limits);
+    reader.decode().map_err(|_| words.broken.clone())?;
     Ok(HeldPicture::new(format, bytes))
 }
 

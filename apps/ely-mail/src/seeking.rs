@@ -107,6 +107,8 @@ fn seconds((first, last): (Date, Date)) -> Result<(i64, i64), jiff::Error> {
 impl Mail {
     /// Searches once typing stops.
     fn typed(&mut self, cx: &mut Context<Self>) {
+        self.listing.invalidate();
+        self.listing.loading = true;
         self.seeking.edits += 1;
         let edits = self.seeking.edits;
         cx.spawn(async move |this, cx| {

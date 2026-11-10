@@ -2,6 +2,8 @@
 
 pub(super) const VI: &[(&str, &str)] = &[
     ("mail.write.title", "Thư mới"),
+    ("mail.write.edit_as_new", "Chỉnh sửa thành thư mới"),
+    ("mail.write.edit_as_new_incomplete", "Tải xuống toàn bộ thư và tất cả tệp đính kèm trước khi chỉnh sửa thành thư mới."),
     ("mail.write.from", "Từ"),
     ("mail.write.wrote", "Vào {date}, {sender} đã viết:"),
     ("mail.write.wrote_undated", "{sender} đã viết:"),

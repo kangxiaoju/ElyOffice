@@ -40,7 +40,7 @@ pub use drafts::{DraftId, Left, Remote, Shelved, Stowed, Unsent};
 pub use find::{Field, Found, Search};
 pub use folders::{Held, LocalFolder, Synced};
 pub use identity::Identity;
-pub use listing::{Filter, Scope, Summary};
+pub use listing::{Filter, MessageCursor, MessagePage, Scope, Summary};
 pub use mbox::{Packed, Unpacked};
 pub use messages::{Fetched, Key, Stored};
 pub use outbox::{Filed, Filing, Going, Handed, Landing, Letter, OutboxId, Queued};

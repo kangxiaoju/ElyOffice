@@ -39,6 +39,8 @@ pub struct Mail {
     pub reply_to: Vec<Mailbox>,
     pub to: Vec<Mailbox>,
     pub cc: Vec<Mailbox>,
+    /// Hidden recipients when the stored message includes them.
+    pub bcc: Vec<Mailbox>,
     /// Seconds since the Unix epoch.
     pub date: Option<i64>,
     pub message_id: Option<String>,
@@ -109,6 +111,7 @@ pub fn read(raw: &[u8]) -> Result<Mail> {
         reply_to: mailboxes(message.reply_to().into_iter()),
         to: mailboxes(message.all_to()),
         cc: mailboxes(message.all_cc()),
+        bcc: mailboxes(message.all_bcc()),
         date: message.date().map(|date| date.to_timestamp()),
         message_id: message.message_id().map(str::to_owned),
         in_reply_to: ids(message.in_reply_to()),

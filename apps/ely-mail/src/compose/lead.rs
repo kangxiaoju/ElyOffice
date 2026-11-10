@@ -17,7 +17,10 @@ fn people(list: &[Mailbox]) -> String {
 }
 
 /// The line or lines that introduce the earlier message.
-pub fn lead(how: How, mail: &ely_mail_engine::Mail, words: String, cx: &App) -> Earlier {
+pub fn lead(how: How, mail: &ely_mail_engine::Mail, words: String, cx: &App) -> Option<Earlier> {
+    if how == How::EditAsNew {
+        return None;
+    }
     let sender = people(&mail.from);
     let date = mail.date.map(local_time);
     if how != How::Forward {
@@ -29,10 +32,10 @@ pub fn lead(how: How, mail: &ely_mail_engine::Mail, words: String, cx: &App) -> 
             ),
             None => text(cx, "mail.write.wrote_undated", &[("sender", &sender)]),
         };
-        return Earlier::Quoted {
+        return Some(Earlier::Quoted {
             lead: lead.to_string(),
             text: words,
-        };
+        });
     }
     let line = |key: &str, value: &str| text(cx, key, &[("value", value)]).to_string();
     let mut lead = vec![
@@ -49,5 +52,5 @@ pub fn lead(how: How, mail: &ely_mail_engine::Mail, words: String, cx: &App) -> 
     if !mail.cc.is_empty() {
         lead.push(line("mail.write.lead.cc", &people(&mail.cc)));
     }
-    Earlier::Forwarded { lead, text: words }
+    Some(Earlier::Forwarded { lead, text: words })
 }

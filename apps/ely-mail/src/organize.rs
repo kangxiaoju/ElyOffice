@@ -131,6 +131,12 @@ impl Mail {
                     this.update(cx, |mail, cx| mail.save_eml(id, cx)).ok();
                 });
             row = row.child(save);
+            let this = cx.weak_entity();
+            row = row.child(IconButton::new("mail-act-edit-as-new", IconName::SquarePen)
+                .tooltip(text(cx, "mail.write.edit_as_new", &[]))
+                .on_click(move |_, _, cx| {
+                    this.update(cx, |mail, cx| mail.answer(id, crate::writing::How::EditAsNew, cx)).ok();
+                }));
         }
         Some(row.into_any_element())
     }

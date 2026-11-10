@@ -19,6 +19,100 @@ use crate::{
     reading::{Each, Open},
 };
 
+fn png() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    image::RgbaImage::from_pixel(16, 12, image::Rgba([40, 120, 200, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .unwrap();
+    bytes
+}
+
+fn picture_words() -> Words {
+    Words {
+        broken: "broken".into(), waiting: "waiting".into(),
+        not_picture: "not picture".into(), svg: "svg".into(), unnamed: "unnamed".into(),
+    }
+}
+
+fn cid_body(kind: &str, bytes: &[u8]) -> letter::Body {
+    use base64::Engine as _;
+    let raw = format!("Content-Type: multipart/mixed; boundary=m\r\n\r\n--m\r\nContent-Type: text/html\r\n\r\n<img src=\"cid:picture%40example.com\"><img src=\"https://example.invalid/remote.png\"><img src=\"https://example.invalid/pixel.png\" width=\"1\" height=\"1\">\r\n--m\r\nContent-Type: {kind}\r\nContent-Disposition: attachment; filename=picture.bin\r\nContent-ID: <picture@example.com>\r\nContent-Transfer-Encoding: base64\r\n\r\n{}\r\n--m--\r\n", base64::engine::general_purpose::STANDARD.encode(bytes));
+    let mail = ely_mail_engine::read(raw.as_bytes()).unwrap();
+    letter::body(&[], mail, &picture_words())
+}
+
+#[test]
+fn cid_raster_bytes_override_nonstandard_and_mislabeled_mime() {
+    use ely_gpui_component::documents::HeldPicture;
+    let bytes = png();
+    for kind in ["image/png; charset=binary", "application/octet-stream", "image/x-png", "image/jpeg"] {
+        let body = cid_body(kind, &bytes);
+        let expected = HeldPicture::new(gpui::ImageFormat::Png, bytes.clone());
+        assert_eq!(body.pictures.get("ely-inline:0"), Some(&Ok(expected)), "{kind}");
+        assert_eq!(body.files, [("picture.bin".to_owned(), Some(bytes.len() as u64))]);
+        assert_eq!(body.remote, ["https://example.invalid/remote.png"]);
+        assert!(!body.pictures.contains_key(&body.remote[0]), "remote stays blocked");
+        assert_eq!(body.trackers, 1);
+    }
+}
+
+#[test]
+fn cid_non_raster_and_corrupt_payloads_are_not_held_as_pictures() {
+    for (kind, bytes) in [
+        ("image/png", b"<html>not an image</html>".as_slice()),
+        ("application/octet-stream", b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".as_slice()),
+        ("image/svg+xml; charset=utf-8", b"<svg/>".as_slice()),
+        ("image/png", b"\x89PNG\r\n\x1a\ncorrupt".as_slice()),
+        ("image/tiff", b"II*\0\x08\0\0\0".as_slice()),
+    ] {
+        let body = cid_body(kind, bytes);
+        assert!(matches!(body.pictures.get("ely-inline:0"), Some(Err(_))), "{kind}");
+        assert_eq!(body.files.len(), 1, "download remains available");
+    }
+}
+
+#[test]
+fn data_uri_and_direct_pictures_share_byte_validation() {
+    use base64::Engine as _;
+    use ely_gpui_component::documents::HeldPicture;
+    let bytes = png();
+    let raw = format!("Content-Type: text/html\r\n\r\n<img src=\"data:image/x-png;charset=binary;base64,{}\">", base64::engine::general_purpose::STANDARD.encode(&bytes));
+    let body = letter::body(&[], ely_mail_engine::read(raw.as_bytes()).unwrap(), &picture_words());
+    let expected = HeldPicture::new(gpui::ImageFormat::Png, bytes.clone());
+    assert_eq!(body.pictures.get("ely-data:1"), Some(&Ok(expected.clone())));
+    assert_eq!(letter::held(" Image/PNG ; charset=binary", bytes, &picture_words()), Ok(expected));
+    assert!(letter::held("image/png", b"<html/>".to_vec(), &picture_words()).is_err());
+}
+
+#[test]
+fn supported_rasters_are_detected_from_bytes_not_headers() {
+    use ely_gpui_component::documents::HeldPicture;
+    for (format, held) in [
+        (image::ImageFormat::Png, gpui::ImageFormat::Png),
+        (image::ImageFormat::Jpeg, gpui::ImageFormat::Jpeg),
+        (image::ImageFormat::Gif, gpui::ImageFormat::Gif),
+        (image::ImageFormat::Bmp, gpui::ImageFormat::Bmp),
+        (image::ImageFormat::WebP, gpui::ImageFormat::Webp),
+    ] {
+        let mut bytes = Vec::new();
+        image::RgbImage::from_pixel(4, 3, image::Rgb([40, 120, 200]))
+            .write_to(&mut std::io::Cursor::new(&mut bytes), format).unwrap();
+        let expected = HeldPicture::new(held, bytes.clone());
+        assert_eq!(letter::held("application/octet-stream", bytes, &picture_words()), Ok(expected));
+    }
+}
+
+#[test]
+fn empty_oversized_and_overdimensioned_pictures_are_not_successes() {
+    let words = picture_words();
+    assert_eq!(letter::held("image/png", Vec::new(), &words), Err(words.waiting.clone()));
+    assert!(letter::held("image/png", vec![0; ely_mail_engine::fetch::LARGEST as usize + 1], &words).is_err());
+    let mut bytes = Vec::new();
+    image::RgbaImage::new(8193, 1)
+        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png).unwrap();
+    assert!(letter::held("image/png", bytes, &words).is_err());
+}
+
 /// Serves a PNG to every request; counts them.
 pub(super) fn pictures() -> (String, Arc<AtomicUsize>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -34,9 +128,10 @@ pub(super) fn pictures() -> (String, Arc<AtomicUsize>) {
                 line.clear();
             }
             let mut stream = stream;
-            let head = "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 4\r\n\r\n";
+            let bytes = png();
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\n\r\n", bytes.len());
             stream.write_all(head.as_bytes()).unwrap();
-            stream.write_all(b"\x89PNG").unwrap();
+            stream.write_all(&bytes).unwrap();
             count.fetch_add(1, Ordering::SeqCst);
         }
     });
@@ -45,6 +140,8 @@ pub(super) fn pictures() -> (String, Arc<AtomicUsize>) {
 
 /// HTML with a logo, a web picture, a waiting file.
 fn letter(subject: &str, web: &str) -> Vec<u8> {
+    use base64::Engine as _;
+    let logo = base64::engine::general_purpose::STANDARD.encode(png());
     format!(
         "From: Ann <ann@example.com>\r\nTo: Bo <bo@example.com>\r\nSubject: {subject}\r\n\
          Date: 3 Jan 2024 10:00:00 +0000\r\n\
@@ -54,7 +151,7 @@ fn letter(subject: &str, web: &str) -> Vec<u8> {
          <p>Hello <b>Bo</b></p><script>steal()</script>\
          <img src=\"cid:logo@ex\" alt=\"Logo\"><img src=\"{web}\">\r\n\
          --r\r\nContent-Type: image/png\r\nContent-ID: <logo@ex>\r\n\
-         Content-Transfer-Encoding: base64\r\n\r\niVBORw==\r\n--r--\r\n\
+         Content-Transfer-Encoding: base64\r\n\r\n{logo}\r\n--r--\r\n\
          --m\r\nContent-Type: application/pdf\r\n\
          Content-Disposition: attachment; filename=report.pdf\r\n\r\n\r\n--m--\r\n"
     )
@@ -296,7 +393,8 @@ fn mail_never_draws_svg() {
             Ok(_) => panic!("{kind} was held"),
         }
     }
-    assert!(letter::held("image/png", b"\x89PNG".to_vec(), &words).is_ok());
+    assert!(letter::held("image/png", png(), &words).is_ok());
+    assert!(letter::held("image/png", b"\x89PNG".to_vec(), &words).is_err());
 }
 
 #[test]

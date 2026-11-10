@@ -13,8 +13,8 @@ use ely_mail_engine::{Mailbox, Part};
 use ely_platform::AppId;
 use ely_ui::Shell;
 use gpui::{
-    AnyElement, App, AppContext as _, Context, FocusHandle, IntoElement, ParentElement as _, Render,
-    Styled as _, Window, div, px, size,
+    AnyElement, App, AppContext as _, Context, FocusHandle, IntoElement, ParentElement as _,
+    Render, Styled as _, Window, div, px, size,
 };
 
 use crate::{
@@ -68,13 +68,20 @@ pub struct Eml {
 
 /// True for a file ElyMail reads rather than attaches.
 pub fn is_eml(path: &std::path::Path) -> bool {
-    path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("eml"))
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("eml"))
 }
 
 impl Mail {
     /// Links and messages open; other files join a draft.
     pub fn take_files(&mut self, files: Vec<PathBuf>, cx: &mut Context<Self>) {
-        let (links, files): (Vec<_>, Vec<_>) = files.into_iter().partition(|opened| ely_ui::mail_link(opened).is_some());
+        if self.initializing {
+            self.pending_files.extend(files);
+            return;
+        }
+        let (links, files): (Vec<_>, Vec<_>) = files
+            .into_iter()
+            .partition(|opened| ely_ui::mail_link(opened).is_some());
         for link in links {
             match ely_mail_engine::mailto::parse(ely_ui::mail_link(&link).expect("a mail link")) {
                 Ok(asked) => self.write_asked(asked, cx),
@@ -92,7 +99,12 @@ impl Mail {
 
     /// Asks for message files, then opens each.
     pub fn pick_eml(&mut self, cx: &mut Context<Self>) {
-        let options = gpui::PathPromptOptions { files: true, directories: false, multiple: true, prompt: None };
+        let options = gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: None,
+        };
         let picked = cx.prompt_for_paths(options);
         cx.spawn(async move |this, cx| {
             let paths = match picked.await {
@@ -101,7 +113,10 @@ impl Mail {
                 Ok(Err(error)) => return log::error!("mail: the open panel failed: {error}"),
                 Err(error) => return log::error!("mail: the open panel went away: {error}"),
             };
-            this.update(cx, |mail, cx| paths.into_iter().for_each(|path| mail.open_eml(path, cx))).ok();
+            this.update(cx, |mail, cx| {
+                paths.into_iter().for_each(|path| mail.open_eml(path, cx))
+            })
+            .ok();
         })
         .detach();
     }
@@ -122,7 +137,9 @@ impl Eml {
     fn new(path: PathBuf, cx: &mut Context<Self>) -> Self {
         let words = words(cx);
         cx.spawn(async move |this, cx| {
-            let read = cx.background_spawn(async move { read_file(&path, &words) }).await;
+            let read = cx
+                .background_spawn(async move { read_file(&path, &words) })
+                .await;
             this.update(cx, |eml, cx| {
                 eml.shown = Some(read.map(Shown::from));
                 cx.notify();
@@ -130,7 +147,11 @@ impl Eml {
             .ok();
         })
         .detach();
-        Eml { shown: None, said: None, focus: cx.focus_handle() }
+        Eml {
+            shown: None,
+            said: None,
+            focus: cx.focus_handle(),
+        }
     }
 
     pub(crate) fn save_file(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -144,7 +165,10 @@ impl Eml {
             return log::error!("mail: no home folder to save into");
         };
         let dir = dirs.download_dir().unwrap_or(dirs.home_dir()).to_path_buf();
-        let name = part.name.clone().unwrap_or_else(|| text(cx, "mail.file.unnamed", &[]).to_string());
+        let name = part
+            .name
+            .clone()
+            .unwrap_or_else(|| text(cx, "mail.file.unnamed", &[]).to_string());
         let chosen = cx.prompt_for_new_path(&dir, Some(&name));
         cx.spawn(async move |this, cx| {
             let path = match chosen.await {
@@ -154,12 +178,20 @@ impl Eml {
                 Err(error) => return log::error!("mail: the save panel went away: {error}"),
             };
             let target = path.clone();
-            let written = cx.background_spawn(async move { ely_files::export(&target, None, &part.bytes, 0) }).await;
+            let written = cx
+                .background_spawn(async move { ely_files::export(&target, None, &part.bytes, 0) })
+                .await;
             this.update(cx, |eml, cx| {
                 let shown = path.display().to_string();
                 eml.said = Some(match written {
-                    Ok(_) => (Severity::Success, text(cx, "mail.eml.saved", &[("path", &shown)])),
-                    Err(error) => (Severity::Danger, text(cx, "mail.file.unsaved", &[("error", &error.to_string())])),
+                    Ok(_) => (
+                        Severity::Success,
+                        text(cx, "mail.eml.saved", &[("path", &shown)]),
+                    ),
+                    Err(error) => (
+                        Severity::Danger,
+                        text(cx, "mail.file.unsaved", &[("error", &error.to_string())]),
+                    ),
                 });
                 cx.notify();
             })
@@ -178,7 +210,10 @@ fn read_file(path: &std::path::Path, words: &letter::Words) -> Result<Read, Stri
 
 fn contact(mailbox: &Mailbox) -> Contact {
     let name = mailbox.name.clone().filter(|name| !name.trim().is_empty());
-    Contact::new(name.unwrap_or_else(|| mailbox.email.clone()), mailbox.email.clone())
+    Contact::new(
+        name.unwrap_or_else(|| mailbox.email.clone()),
+        mailbox.email.clone(),
+    )
 }
 
 impl Render for Eml {
@@ -198,7 +233,8 @@ impl Eml {
         let shown = match &self.shown {
             None => {
                 let words = text(cx, "mail.reader.reading", &[]);
-                return EmptyState::new("mail-eml-reading", IconName::Mail, words).into_any_element();
+                return EmptyState::new("mail-eml-reading", IconName::Mail, words)
+                    .into_any_element();
             }
             Some(Err(error)) => {
                 let words = text(cx, "mail.eml.unread", &[]);
@@ -216,9 +252,14 @@ impl Eml {
             Some(Ok(at)) => Message::new("eml", from, at),
             _ => Message::undated("eml", from),
         };
-        let mut message = message.to(shown.to.iter().map(contact)).cc(shown.cc.iter().map(contact));
+        let mut message = message
+            .to(shown.to.iter().map(contact))
+            .cc(shown.cc.iter().map(contact));
         for file in &shown.files {
-            let name = file.name.clone().unwrap_or_else(|| text(cx, "mail.file.unnamed", &[]).to_string());
+            let name = file
+                .name
+                .clone()
+                .unwrap_or_else(|| text(cx, "mail.file.unnamed", &[]).to_string());
             message = message.file(name, file.bytes.len() as u64);
         }
         let subject = match &shown.subject {
@@ -238,7 +279,10 @@ impl Eml {
                 log::info!("mail: a link in a message file opens");
                 cx.open_url(url);
             });
-        let said = self.said.clone().map(|(severity, words)| Alert::new("mail-eml-said", severity, words));
+        let said = self
+            .said
+            .clone()
+            .map(|(severity, words)| Alert::new("mail-eml-said", severity, words));
         MailReader::new("mail-eml", subject, message)
             .on_download(move |_, index, _, cx| {
                 this.update(cx, |eml, cx| eml.save_file(index, cx)).ok();

@@ -2,7 +2,7 @@
 
 use rusqlite::ToSql;
 
-use super::{Filter, Store, Summary, search::words};
+use super::{Filter, MessageCursor, MessagePage, Store, Summary, search::words};
 use crate::{Error, Result};
 
 /// Where the words are looked for.
@@ -39,6 +39,16 @@ pub struct Found {
 impl Store {
     /// Every account and folder; only what is held here.
     pub fn search(&self, search: &Search) -> Result<Found> {
+        let (page, unsearched) = self.find_page_impl(search, None)?;
+        Ok(Found { messages: page.messages, unsearched })
+    }
+
+    /// A bounded search with the same descending date/id continuation as lists.
+    pub fn search_page(&self, search: &Search, after: Option<MessageCursor>, limit: usize) -> Result<(MessagePage, u64)> {
+        self.find_page_impl(search, Some((after, limit)))
+    }
+
+    fn find_page_impl(&self, search: &Search, page: Option<(Option<MessageCursor>, usize)>) -> Result<(MessagePage, u64)> {
         let matching = expression(&search.words, search.field);
         if matching.is_none() && search.dates.is_none() {
             return Err(Error::Invalid("nothing to search for".into()));
@@ -65,12 +75,12 @@ impl Store {
             _ => 0,
         };
         clauses.extend(search.filter.clauses());
-        let messages = self.summaries(&clauses.join(" AND "), &values)?;
-        log::info!("mail: a search found {} messages", messages.len());
-        Ok(Found {
-            messages,
-            unsearched,
-        })
+        let page = match page {
+            Some((after, limit)) => self.summary_page(&clauses.join(" AND "), &values, after, limit)?,
+            None => MessagePage { messages: self.summaries(&clauses.join(" AND "), &values)?, next: None },
+        };
+        log::info!("mail: a search found {} messages", page.messages.len());
+        Ok((page, unsearched))
     }
 
     /// Messages in the dates whose bodies are not here.

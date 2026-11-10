@@ -27,7 +27,7 @@ pub use keeping::Shelf;
 
 use crate::{
     mail::{Mail, text},
-    writing::{Opening, Outgoing, Sender},
+    writing::{How, Opening, Outgoing, Sender},
 };
 
 /// An attached file and its key in the list.
@@ -107,7 +107,13 @@ impl Compose {
                     .and_then(|html| EmailDocument::from_html(&html).map_err(|error| error.to_string())),
             },
             (None, Some(asked)) => EmailDocument::from_plain(&asked.body).map_err(|error| error.to_string()),
-            _ => Ok(EmailDocument::default()),
+            _ => match opening.answered.as_ref().filter(|answered| answered.how == How::EditAsNew) {
+                Some(answered) => match &answered.mail.html {
+                    Some(html) => EmailDocument::from_html(html).map_err(|error| error.to_string()),
+                    None => EmailDocument::from_plain(answered.mail.text.as_deref().unwrap_or_default()).map_err(|error| error.to_string()),
+                },
+                None => Ok(EmailDocument::default()),
+            },
         };
         let import_problem = imported.as_ref().err().cloned();
         let document = cx.new(|cx| {
@@ -174,6 +180,9 @@ impl Compose {
             let start = answered.start;
             compose.to = start.to.iter().map(|to| to.email.clone().into()).collect();
             compose.cc = start.cc.iter().map(|cc| cc.email.clone().into()).collect();
+            if answered.how == How::EditAsNew {
+                compose.bcc = answered.mail.bcc.iter().map(|bcc| bcc.email.clone().into()).collect();
+            }
             compose.subject = start.subject.into();
             compose.in_reply_to = start.in_reply_to;
             compose.references = start.references;
@@ -183,8 +192,7 @@ impl Compose {
                 compose.add_file(part);
             }
             if answered.whole {
-                let earlier = lead::lead(answered.how, &answered.mail, answered.text, cx);
-                compose.before = Some(earlier);
+                compose.before = lead::lead(answered.how, &answered.mail, answered.text, cx);
             }
         }
         if let Some(asked) = opening.asked {

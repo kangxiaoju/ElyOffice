@@ -66,8 +66,22 @@ impl Parts {
     }
 }
 
+fn recover_parts(mut parts: Parts) -> Parts {
+    parts.store = parts.store.and_then(|store| {
+        if store.read_only().is_none() {
+            store
+                .recover_outbox()
+                .map_err(|error| format!("the Outbox was not checked: {error}"))?;
+        }
+        Ok(store)
+    });
+    parts
+}
+
 pub struct Mail {
     pub store: Result<Arc<Mutex<Store>>, String>,
+    pub(crate) initializing: bool,
+    pub(crate) pending_files: Vec<PathBuf>,
     pub read_only: Option<String>,
     pub vault: Arc<Vault>,
     pub tls: Result<TlsConnector, String>,
@@ -151,8 +165,7 @@ pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
         Ok(dir) => dir,
         Err(error) => ely_platform::startup::fail(app, &format!("{error:#}")),
     };
-    let parts = Parts::system(&dir);
-    let mail = cx.new(|cx| Mail::new(parts, window, cx));
+    let mail = cx.new(|cx| Mail::system(&dir, window, cx));
     crate::storage::install(mail.downgrade(), cx);
     let root = attach(app, &mail, false, window, cx);
     // Message files open to read; others go into a draft.
@@ -190,9 +203,8 @@ pub fn embed(dir: &Path, window: &mut Window, cx: &mut App) -> Entity<Mail> {
     // message catalogs must be in place before the view reads any text.
     // `embed_init` installs them once and is a no-op on later calls.
     ely_ui::embed_init(AppId::Mail, cx);
-    let parts = Parts::system(dir);
     cx.new(|cx| {
-        let mut mail = Mail::new(parts, window, cx);
+        let mut mail = Mail::system(dir, window, cx);
         mail.embedded = true;
         mail
     })
@@ -230,6 +242,17 @@ fn attach(
 
 impl Mail {
     pub fn new(parts: Parts, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let work = cx.background_spawn(async move { recover_parts(parts) });
+        Self::starting(work, window, cx)
+    }
+
+    pub(super) fn system(dir: &Path, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let dir = dir.to_path_buf();
+        let work = cx.background_spawn(async move { recover_parts(Parts::system(&dir)) });
+        Self::starting(work, window, cx)
+    }
+
+    fn starting(work: gpui::Task<Parts>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("mail")
@@ -238,27 +261,22 @@ impl Mail {
             .unwrap_or_else(|error| {
                 ely_platform::startup::fail(AppId::Mail, &format!("no mail runtime: {error}"))
             });
-        // A send cut off last time is unknown now.
-        let store = parts.store.and_then(|store| match store.read_only() {
-            Some(_) => Ok(store),
-            None => match store.recover_outbox() {
-                Ok(_) => Ok(store),
-                Err(error) => Err(format!("the Outbox was not checked: {error}")),
-            },
-        });
-        let read_only = match &store {
-            Ok(store) => store.read_only().map(str::to_owned),
-            Err(error) => {
-                log::error!("mail: the store did not open: {error}");
-                None
-            }
+        // The actual store and TLS roots are prepared on the background executor.
+        let parts = Parts {
+            store: Err(String::new()),
+            vault: Vault::system(),
+            tls: Err(String::new()),
+            copies: PathBuf::new(),
+            settings: PathBuf::new(),
+            open: Arc::new(ely_platform::apps::open_file),
         };
-        if let Err(error) = &parts.tls {
-            log::error!("mail: no system TLS: {error}");
-        }
+        let store = parts.store;
+        let read_only = None;
         let this = cx.weak_entity();
-        let mut mail = Mail {
+        let mail = Mail {
             store: store.map(|store| Arc::new(Mutex::new(store))),
+            initializing: true,
+            pending_files: Vec::new(),
             read_only,
             vault: Arc::new(parts.vault),
             tls: parts.tls,
@@ -306,8 +324,32 @@ impl Mail {
             root: WeakEntity::new_invalid(),
             side: cx.new(|_| Side::new(this)),
         };
-        mail.read_accounts(cx);
-        mail.read_cap(cx);
+        cx.spawn(async move |this, cx| {
+            let parts = work.await;
+            this.update(cx, |mail, cx| {
+                mail.read_only = parts
+                    .store
+                    .as_ref()
+                    .ok()
+                    .and_then(|store| store.read_only().map(str::to_owned));
+                mail.store = parts.store.map(|store| Arc::new(Mutex::new(store)));
+                mail.vault = Arc::new(parts.vault);
+                mail.tls = parts.tls;
+                mail.copies = parts.copies;
+                mail.settings = parts.settings;
+                mail.open_copy = parts.open;
+                mail.initializing = false;
+                mail.read_accounts(cx);
+                mail.read_cap(cx);
+                let files = std::mem::take(&mut mail.pending_files);
+                if !files.is_empty() {
+                    mail.take_files(files, cx);
+                }
+                mail.notify(cx);
+            })
+            .ok();
+        })
+        .detach();
         Self::sync_on_a_timer(cx);
         Self::answer_notices(cx);
         mail
@@ -370,6 +412,9 @@ impl Mail {
         work: impl FnOnce(&mut Store) -> ely_mail_engine::Result<R> + Send + 'static,
         then: impl FnOnce(&mut Mail, Result<R, String>, &mut Context<Mail>) + 'static,
     ) {
+        if self.initializing {
+            return;
+        }
         let store = match &self.store {
             Ok(store) => store.clone(),
             Err(error) => {

@@ -2,6 +2,8 @@
 
 pub(super) const JA: &[(&str, &str)] = &[
     ("mail.write.title", "新規メッセージ"),
+    ("mail.write.edit_as_new", "新しいメールとして編集"),
+    ("mail.write.edit_as_new_incomplete", "新しいメールとして編集する前に、メール全文とすべての添付ファイルをダウンロードしてください。"),
     ("mail.write.from", "差出人"),
     ("mail.write.wrote", "{date}、{sender} さんは書きました:"),
     ("mail.write.wrote_undated", "{sender} さんは書きました:"),

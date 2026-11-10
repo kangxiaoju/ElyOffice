@@ -29,13 +29,13 @@ mod flows;
 mod leaving;
 mod links;
 mod migrate;
+mod notices;
 mod organize;
 mod outbox;
 mod panes;
 mod providers;
 mod reading;
 mod rules;
-mod notices;
 mod search;
 mod side;
 mod storage;
@@ -82,7 +82,11 @@ pub(crate) fn settle(cx: &mut VisualTestContext, done: impl Fn(&App) -> bool) {
 
 /// As `settle`, failing past `wait`.
 #[track_caller]
-pub(crate) fn settle_within(cx: &mut VisualTestContext, wait: Duration, done: impl Fn(&App) -> bool) {
+pub(crate) fn settle_within(
+    cx: &mut VisualTestContext,
+    wait: Duration,
+    done: impl Fn(&App) -> bool,
+) {
     let deadline = Instant::now() + wait;
     while Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
@@ -143,7 +147,8 @@ pub(crate) fn window_with<'a>(
 }
 
 /// Files the windows opened, in place of their apps.
-pub(crate) static OPENED: std::sync::Mutex<Vec<std::path::PathBuf>> = std::sync::Mutex::new(Vec::new());
+pub(crate) static OPENED: std::sync::Mutex<Vec<std::path::PathBuf>> =
+    std::sync::Mutex::new(Vec::new());
 
 /// A port nothing listens on.
 pub(crate) fn closed_port() -> u16 {
@@ -223,4 +228,26 @@ pub(crate) fn step_words(mail: &Entity<Mail>, cx: &mut VisualTestContext) -> Str
             Step::Checked { .. } => "checked".into(),
         },
     )
+}
+
+#[test]
+fn hosted_store_open_does_not_block_window_and_finishes_off_thread() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cx = TestAppContext::single();
+    cx.executor().allow_parking();
+    cx.update(ely_gpui_component::init_for_tests);
+    let root = dir.path().to_path_buf();
+    let (mail, cx) = cx.add_window_view(move |window, cx| {
+        ely_ui::embed_init(ely_platform::AppId::Mail, cx);
+        let mail = Mail::system(&root, window, cx);
+        assert!(mail.initializing);
+        assert!(
+            !root.join("mail.db").exists(),
+            "Store::open must not run in this UI callback"
+        );
+        mail
+    });
+    settle(cx, |app| mail.read(app).accounts.is_some());
+    assert!(dir.path().join("mail.db").exists());
+    cx.update(|_, app| assert!(!mail.read(app).initializing));
 }

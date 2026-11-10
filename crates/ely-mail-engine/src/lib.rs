@@ -37,7 +37,7 @@ pub use smtp::Smtp;
 pub use store::{
     AccountId, Action, Arrivals, Cached, Change, Contact, ContactId, DraftId, Fetched, Field, Filed, Filing, Filter, Found,
     Going, Handed, Held, Identity, Imported, Key, Landing, Left, Letter, LocalFolder, MailboxId, Match,
-    MessageId, OutboxId, Packed, Queued, Remote, Rule, RuleId, Scope, Search, Shelved, Sizes, Store,
+    MessageCursor, MessagePage, MessageId, OutboxId, Packed, Queued, Remote, Rule, RuleId, Scope, Search, Shelved, Sizes, Store,
     Stored, Stowed, Summary, Synced, Unpacked, Unsent,
 };
 pub use tokio_rustls::TlsConnector;

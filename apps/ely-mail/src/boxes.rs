@@ -3,7 +3,7 @@
 use std::{collections::HashMap, rc::Rc};
 
 use ely_gpui_component::mail::Mail as Row;
-use ely_mail_engine::{AccountId, Filter, MailboxId, MessageId, Role, Scope, Summary};
+use ely_mail_engine::{AccountId, Filter, MailboxId, MessageCursor, MessageId, Role, Scope, Search, Summary};
 use gpui::{Context, SharedString};
 
 use crate::{
@@ -95,6 +95,11 @@ pub fn index(rows: Vec<Row>) -> Indexed {
 pub struct Listing {
     /// Numbers reads; an older one is dropped.
     pub read: u64,
+    query: Option<(Open, Filter, Option<Search>)>,
+    pub loading: bool,
+    pub has_more: bool,
+    pub page_error: Option<String>,
+    next: Option<MessageCursor>,
     /// None until read, or when nothing lists mail.
     pub mails: Option<Result<Rc<Vec<Row>>, String>>,
     at: HashMap<SharedString, usize>,
@@ -116,6 +121,29 @@ impl Listing {
                 Rc::new(indexed.rows)
             })
         });
+    }
+
+    fn append(&mut self, indexed: Indexed) {
+        if let Some(Ok(rows)) = &mut self.mails {
+            let rows = Rc::make_mut(rows);
+            for row in indexed.rows {
+                if !self.at.contains_key(&row.key) {
+                    self.at.insert(row.key.clone(), rows.len());
+                    rows.push(row);
+                }
+            }
+            self.facts.extend(indexed.facts);
+        }
+    }
+
+    /// Invalidates an in-flight read immediately, including search's debounce gap.
+    pub fn invalidate(&mut self) {
+        self.read += 1;
+        self.loading = false;
+    }
+
+    fn accepts(&self, read: u64) -> bool {
+        self.read == read
     }
 
     /// The picked messages' facts, in list order.
@@ -181,6 +209,16 @@ impl Mail {
 
     /// Unread counts, and the open list when it lists mail.
     pub fn read_mail(&mut self, cx: &mut Context<Self>) {
+        self.load_mail(false, cx);
+    }
+
+    pub fn load_more_mail(&mut self, cx: &mut Context<Self>) {
+        if !self.listing.loading && self.listing.has_more {
+            self.load_mail(true, cx);
+        }
+    }
+
+    fn load_mail(&mut self, mut append: bool, cx: &mut Context<Self>) {
         self.listing.read += 1;
         let (read, open, filter) = (self.listing.read, self.open, self.filter);
         let scope = open.scope();
@@ -188,11 +226,27 @@ impl Mail {
             Ok(search) => search.flatten(),
             Err(error) => {
                 log::warn!("mail: a search's dates failed: {error}");
+                self.listing.loading = false;
+                self.listing.has_more = false;
                 self.listing.show(Some(Err(error)));
                 self.listing.pick(Vec::new());
                 return cx.notify();
             }
         };
+        let query = (open, filter, search.clone());
+        if self.listing.query.as_ref() != Some(&query) {
+            self.listing.show(None);
+            self.listing.pick(Vec::new());
+            self.listing.next = None;
+            self.listing.has_more = false;
+            self.listing.query = Some(query);
+            append = false;
+        }
+        let loaded = self.listing.mails.as_ref().and_then(|rows| rows.as_ref().ok()).map_or(0, |rows| rows.len());
+        let limit = if append && scope.is_some() { 20 } else { loaded.max(20) + if append { 20 } else { 0 } };
+        let after = if append { self.listing.next } else { None };
+        self.listing.loading = true;
+        self.listing.page_error = None;
         let none = (
             text(cx, "mail.no_sender", &[]),
             text(cx, "mail.no_subject", &[]),
@@ -203,16 +257,20 @@ impl Mail {
             cx,
             move |store| {
                 let (mut kept, mut unsearched) = (Vec::new(), None);
+                let (mut next, mut has_more) = (None, false);
                 let rows = match scope {
                     Some(scope) => {
-                        let list = match &search {
+                        let page = match &search {
                             Some(search) => {
-                                let found = store.search(search)?;
-                                unsearched = Some(found.unsearched);
-                                found.messages
+                                let (page, missing) = store.search_page(search, after, limit)?;
+                                unsearched = Some(missing);
+                                page
                             }
-                            None => store.list(scope, filter)?,
+                            None => store.list_page(scope, filter, after, limit)?,
                         };
+                        next = page.next;
+                        has_more = next.is_some();
+                        let list = page.messages;
                         let facts = list.iter().map(|each| (key(each), fact(each))).collect();
                         let rows = list.into_iter().map(|each| row(each, &none)).collect();
                         Some(Indexed {
@@ -221,24 +279,34 @@ impl Mail {
                         })
                     }
                     None if open == Open::Drafts => {
-                        kept = store.drafts()?;
+                        kept = store.drafts_prefix(limit + 1)?;
+                        has_more = kept.len() > limit;
+                        kept.truncate(limit);
                         Some(index(draft_list::rows(&kept, &none)))
                     }
                     None => None,
                 };
                 let queued = match open {
-                    Open::Outbox => store.outbox()?,
+                    Open::Outbox => {
+                        let mut queued = store.outbox_prefix(limit + 1)?;
+                        has_more = queued.len() > limit;
+                        queued.truncate(limit);
+                        queued
+                    }
                     _ => Vec::new(),
                 };
                 let unread = store.unread()?;
-                Ok((rows, unread, kept, queued, store.pending()?, unsearched))
+                Ok((rows, unread, kept, queued, store.pending()?, unsearched, next, has_more))
             },
             move |mail, read_now, cx| {
-                if mail.listing.read != read {
+                if !mail.listing.accepts(read) {
                     return log::info!("mail: list read {read} ended after a newer one");
                 }
+                mail.listing.loading = false;
                 match read_now {
-                    Ok((rows, unread, kept, queued, pending, unsearched)) => {
+                    Ok((rows, unread, kept, queued, pending, unsearched, next, has_more)) => {
+                        mail.listing.next = next;
+                        mail.listing.has_more = has_more;
                         mail.seeking.unsearched = unsearched;
                         mail.unread = unread;
                         mail.shelved = kept;
@@ -250,13 +318,20 @@ impl Mail {
                         mail.queued = queued;
                         let shown = rows.as_ref().map_or(0, |rows| rows.rows.len());
                         log::info!("mail: list read {read} shows {shown} messages, searched {searched}");
-                        mail.listing.show(rows.map(Ok));
+                        if append && scope.is_some() {
+                            if let Some(rows) = rows { mail.listing.append(rows); }
+                        } else {
+                            mail.listing.show(rows.map(Ok));
+                        }
                     }
                     Err(error) => {
                         log::warn!("mail: list read {read} failed: {error}");
-                        mail.seeking.unsearched = None;
-                        let listed = scope.is_some() || matches!(open, Open::Drafts | Open::Outbox);
-                        mail.listing.show(listed.then_some(Err(error)));
+                        mail.listing.page_error = Some(error.clone());
+                        if mail.listing.mails.is_none() {
+                            mail.seeking.unsearched = None;
+                            let listed = scope.is_some() || matches!(open, Open::Drafts | Open::Outbox);
+                            mail.listing.show(listed.then_some(Err(error)));
+                        }
                     }
                 }
                 let keys = std::mem::take(&mut mail.listing.selected);
@@ -327,6 +402,24 @@ fn row(summary: Summary, none: &(SharedString, SharedString)) -> Row {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn append_retains_selection_and_invalidated_scope_rejects_old_reads() {
+        let make = |id: &'static str| Row::undated(id, "Sender", "Subject");
+        let mut listing = Listing::default();
+        listing.show(Some(Ok(index(vec![make("1"), make("2")]))));
+        listing.pick(vec!["2".into()]);
+        listing.append(index(vec![make("2"), make("3")]));
+        assert_eq!(listing.mails.as_ref().unwrap().as_ref().unwrap().len(), 3);
+        assert_eq!(listing.selected, vec![SharedString::from("2")]);
+        assert_eq!(listing.chosen.as_ref().unwrap().key.as_ref(), "2");
+        let old = listing.read;
+        listing.loading = true;
+        listing.invalidate();
+        assert!(!listing.accepts(old));
+        assert!(!listing.loading);
+        assert!(listing.accepts(listing.read));
+    }
 
     #[test]
     fn summary_rows_collapse_header_newlines_for_single_line_components() {

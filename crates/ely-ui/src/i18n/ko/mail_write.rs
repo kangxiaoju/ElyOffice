@@ -2,6 +2,8 @@
 
 pub(super) const KO: &[(&str, &str)] = &[
     ("mail.write.title", "새 메시지"),
+    ("mail.write.edit_as_new", "새 메일로 편집"),
+    ("mail.write.edit_as_new_incomplete", "새 메일로 편집하기 전에 전체 메시지와 모든 첨부 파일을 다운로드하세요."),
     ("mail.write.from", "보낸 사람"),
     ("mail.write.wrote", "{date}에 {sender} 님이 작성:"),
     ("mail.write.wrote_undated", "{sender} 님이 작성:"),

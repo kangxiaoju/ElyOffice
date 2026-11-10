@@ -1,5 +1,5 @@
 /// Step `n` upgrades version `n`.
-pub(super) const STEPS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18];
+pub(super) const STEPS: &[&str] = &[V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15, V16, V17, V18, V19];
 
 /// Upgrades to this version reindex every message.
 pub(super) const REINDEX: usize = 12;
@@ -359,4 +359,11 @@ CREATE TABLE rebuilt_new (
 INSERT INTO rebuilt_new (mailbox, ident) SELECT mailbox, ident FROM rebuilt;
 DROP TABLE rebuilt;
 ALTER TABLE rebuilt_new RENAME TO rebuilt;
+";
+
+/// Bounded lists seek through the visible mailbox and stable date/id ordering.
+const V19: &str = "
+CREATE INDEX messages_list ON messages (date DESC, id DESC) WHERE NOT erasing;
+CREATE INDEX messages_mailbox_list ON messages (coalesce(moving, mailbox), date DESC, id DESC) WHERE NOT erasing;
+CREATE INDEX drafts_list ON drafts (saved DESC, id DESC);
 ";

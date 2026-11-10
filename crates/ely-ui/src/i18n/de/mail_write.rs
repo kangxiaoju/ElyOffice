@@ -2,6 +2,8 @@
 
 pub(super) const DE: &[(&str, &str)] = &[
     ("mail.write.title", "Neue Nachricht"),
+    ("mail.write.edit_as_new", "Als neue Nachricht bearbeiten"),
+    ("mail.write.edit_as_new_incomplete", "Lade die vollständige Nachricht und alle Anhänge herunter, bevor du sie als neue Nachricht bearbeitest."),
     ("mail.write.from", "Von"),
     ("mail.write.wrote", "Am {date} schrieb {sender}:"),
     ("mail.write.wrote_undated", "{sender} schrieb:"),

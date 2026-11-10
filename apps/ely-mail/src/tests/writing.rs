@@ -72,6 +72,122 @@ pub(super) fn draft(to: &[&str], subject: &str) -> Draft {
 }
 
 #[test]
+fn edit_as_new_keeps_editable_body_recipients_files_and_cids_without_threading() {
+    use base64::Engine as _;
+    let mut png = Vec::new();
+    image::RgbaImage::from_pixel(2, 2, image::Rgba([40, 120, 200, 255]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+    let bytes = format!(
+        "{NOTE}Bcc: hidden@example.com\r\nIn-Reply-To: <parent@x>\r\nReferences: <root@x> <parent@x>\r\nContent-Type: multipart/mixed; boundary=m\r\n\r\n--m\r\nContent-Type: multipart/related; boundary=r\r\n\r\n--r\r\nContent-Type: text/html\r\n\r\n<p>Lunch <strong>Friday</strong>?</p><img src=\"cid:logo@ex\" alt=\"Logo\">\r\n--r\r\nContent-Type: image/png\r\nContent-ID: <logo@ex>\r\nContent-Transfer-Encoding: base64\r\n\r\n{}\r\n--r--\r\n--m\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=plan.pdf\r\n\r\n%PDF\r\n--m--\r\n",
+        base64::engine::general_purpose::STANDARD.encode(&png),
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let id = seeded(dir.path(), bytes.as_bytes(), &[]);
+    let store = Store::open(dir.path()).unwrap();
+    let original = store.get(id).unwrap();
+    let mut cx = TestAppContext::single();
+    let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+    cx.update(|_, app| mail.update(app, |mail, cx| mail.answer(id, How::EditAsNew, cx)));
+    let compose = opened(cx);
+    settle(cx, |app| compose.read(app).unwrap().reading == 0);
+    let out = cx.update(|_, app| {
+        let compose = compose.read(app).unwrap();
+        assert_eq!(compose.from, store.account_of(original.mailbox).unwrap());
+        assert!(compose.before.is_none());
+        assert!(!compose.headers_only);
+        assert_eq!(compose.subject.as_ref(), "plan");
+        let shown = |list: &[gpui::SharedString]| list.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert_eq!(shown(&compose.to), ["bo@example.com", "cy@example.com"]);
+        assert_eq!(shown(&compose.cc), ["dee@example.com"]);
+        assert_eq!(shown(&compose.bcc), ["hidden@example.com"]);
+        compose.outgoing(&Draft {
+            to: compose.to.clone(), cc: compose.cc.clone(), bcc: compose.bcc.clone(),
+            subject: compose.subject.clone(),
+        }, app).unwrap()
+    });
+    assert!(out.before.is_none());
+    assert!(out.in_reply_to.is_none());
+    assert!(out.references.is_empty());
+    assert!(out.text.contains("Lunch Friday?"));
+    assert!(out.html.contains("<strong>Friday</strong>"));
+    assert!(out.html.contains("cid:logo@ex"));
+    assert!(out.attachments.iter().any(|part| part.name.as_deref() == Some("plan.pdf") && part.bytes == b"%PDF"));
+    assert!(out.attachments.iter().any(|part| part.content_id.as_deref() == Some("logo@ex") && part.bytes == png));
+    let built = prepare(&out).unwrap();
+    let copy = read(&built.bytes).unwrap();
+    assert_ne!(copy.message_id.as_deref(), Some("a@x"));
+    assert!(copy.in_reply_to.is_empty());
+    assert!(copy.references.is_empty());
+    assert_eq!(copy.bcc[0].email, "hidden@example.com", "draft serialization keeps known Bcc");
+    assert!(read(&without_bcc(&built.bytes).unwrap()).unwrap().bcc.is_empty(), "the send path still strips Bcc");
+    assert!(copy.html.unwrap().contains("cid:logo@ex"));
+    assert_eq!(store.original(id).unwrap().unwrap(), bytes.as_bytes());
+    assert_eq!(store.get(id).unwrap(), original, "opening a copy never rewrites its source");
+    cx.update(|_, app| compose.update(app, |compose, _, cx| {
+        compose.edited(Draft {
+            to: compose.to.clone(), cc: compose.cc.clone(), bcc: compose.bcc.clone(),
+            subject: "Edited plan".into(),
+        }, cx);
+        compose.keep(cx);
+    }).unwrap());
+    settle(cx, |_| store.drafts().unwrap().len() == 1);
+    let kept = store.drafts().unwrap().remove(0);
+    assert_eq!(kept.unsent.subject, "Edited plan");
+    assert_eq!(kept.unsent.bcc, ["hidden@example.com"]);
+    assert!(kept.unsent.in_reply_to.is_none());
+    assert!(kept.unsent.references.is_empty());
+    assert!(kept.unsent.earlier.is_none());
+    assert!(kept.unsent.html.as_ref().unwrap().contains("cid:logo@ex"));
+    assert_eq!(store.original(id).unwrap().unwrap(), bytes.as_bytes());
+    // Editing the real editor changes only the new message.
+    cx.update(|_, app| compose.update(app, |compose, _, cx| {
+        compose.document.update(cx, |editor, cx| editor.set_document(
+            ely_gpui_component::documents::email::EmailDocument::from_plain("Changed copy").unwrap(), cx,
+        ).unwrap());
+        assert_eq!(compose.outgoing(&draft(&["bo@example.com"], "plan"), cx).unwrap().text, "Changed copy");
+    }).unwrap());
+    assert_eq!(store.original(id).unwrap().unwrap(), bytes.as_bytes());
+}
+
+#[test]
+fn edit_as_new_plain_body_is_editable_not_quoted() {
+    let dir = tempfile::tempdir().unwrap();
+    let id = seeded(dir.path(), format!("{NOTE}\r\n**Literal**\r\nSecond line").as_bytes(), &[]);
+    let mut cx = TestAppContext::single();
+    let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+    cx.update(|_, app| mail.update(app, |mail, cx| mail.answer(id, How::EditAsNew, cx)));
+    let compose = opened(cx);
+    cx.update(|_, app| {
+        let compose = compose.read(app).unwrap();
+        let out = compose.outgoing(&draft(&["bo@example.com"], "plan"), app).unwrap();
+        assert_eq!(out.text.replace("\r\n", "\n"), "**Literal**\nSecond line");
+        assert!(out.before.is_none());
+        assert!(!out.html.contains("<strong>Literal</strong>"));
+    });
+}
+
+#[test]
+fn edit_as_new_rejects_headers_only_and_missing_parts_without_changing_source() {
+    for headers_only in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = format!("{NOTE}\r\nBody");
+        let id = seeded(dir.path(), bytes.as_bytes(), &["2".to_owned()]);
+        let mut store = Store::open(dir.path()).unwrap();
+        if headers_only {
+            let account = store.account_of(store.get(id).unwrap().mailbox).unwrap();
+            let inbox = store.folders(account).unwrap()[0].id;
+            let id = store.put(inbox, &Key::Imap { uidvalidity: 1, uid: 2 }, &[], Fetched::Headers(format!("{NOTE}\r\n").as_bytes())).unwrap();
+            assert!(crate::writing::answered(&store, id, How::EditAsNew).is_err());
+            assert!(store.original(id).unwrap().is_none());
+        } else {
+            assert!(crate::writing::answered(&store, id, How::EditAsNew).is_err());
+            assert_eq!(store.original(id).unwrap().unwrap(), bytes.as_bytes());
+            assert_eq!(store.get(id).unwrap().missing, ["2"]);
+        }
+    }
+}
+
+#[test]
 fn reply_all_starts_addressed_and_quoting_the_message() {
     let dir = tempfile::tempdir().unwrap();
     let bytes = format!("{NOTE}Content-Type: text/html\r\n\r\n<p>Lunch <b>Friday</b>?</p>\r\n");
