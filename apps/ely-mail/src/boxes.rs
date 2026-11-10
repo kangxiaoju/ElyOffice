@@ -100,6 +100,8 @@ pub struct Listing {
     pub has_more: bool,
     pub page_error: Option<String>,
     next: Option<MessageCursor>,
+    /// The loaded date/id boundary, even when the last page has no continuation.
+    tail: Option<MessageCursor>,
     /// None until read, or when nothing lists mail.
     pub mails: Option<Result<Rc<Vec<Row>>, String>>,
     at: HashMap<SharedString, usize>,
@@ -144,6 +146,10 @@ impl Listing {
 
     fn accepts(&self, read: u64) -> bool {
         self.read == read
+    }
+
+    pub(crate) fn matches_query(&self, open: Open, filter: Filter, search: &Option<Search>) -> bool {
+        self.query.as_ref().is_some_and(|query| query.0 == open && query.1 == filter && &query.2 == search)
     }
 
     /// The picked messages' facts, in list order.
@@ -238,13 +244,21 @@ impl Mail {
             self.listing.show(None);
             self.listing.pick(Vec::new());
             self.listing.next = None;
+            self.listing.tail = None;
             self.listing.has_more = false;
             self.listing.query = Some(query);
             append = false;
         }
         let loaded = self.listing.mails.as_ref().and_then(|rows| rows.as_ref().ok()).map_or(0, |rows| rows.len());
-        let limit = if append && scope.is_some() { 20 } else { loaded.max(20) + if append { 20 } else { 0 } };
+        let limit = if scope.is_some() { 20 } else { loaded.max(20) + if append { 20 } else { 0 } };
         let after = if append { self.listing.next } else { None };
+        let through = if append { None } else { self.listing.tail };
+        let picked_drafts: Vec<_> = if open == Open::Drafts {
+            self.shelved.iter()
+                .filter(|draft| self.listing.selected.contains(&draft_list::key(draft.id)))
+                .map(|draft| draft.id)
+                .collect()
+        } else { Vec::new() };
         self.listing.loading = true;
         self.listing.page_error = None;
         let none = (
@@ -258,20 +272,43 @@ impl Mail {
             move |store| {
                 let (mut kept, mut unsearched) = (Vec::new(), None);
                 let (mut next, mut has_more) = (None, false);
+                let mut last_message = None;
                 let rows = match scope {
                     Some(scope) => {
-                        let page = match &search {
-                            Some(search) => {
-                                let (page, missing) = store.search_page(search, after, limit)?;
-                                unsearched = Some(missing);
-                                page
+                        let mut list = Vec::new();
+                        let mut cursor = after;
+                        loop {
+                            let page = match &search {
+                                Some(search) => {
+                                    let (page, missing) = store.search_page(search, cursor, limit)?;
+                                    unsearched = Some(missing);
+                                    page
+                                }
+                                None => store.list_page(scope, filter, cursor, limit)?,
+                            };
+                            next = page.next;
+                            has_more = next.is_some();
+                            let crossed = through.is_some_and(|tail| page.messages.last().is_some_and(|last| {
+                                (last.date, last.id.0) <= (tail.date, tail.id.0)
+                            }));
+                            for message in page.messages {
+                                if through.is_some_and(|tail| (message.date, message.id.0) < (tail.date, tail.id.0)) {
+                                    has_more = true;
+                                    break;
+                                }
+                                list.push(message);
                             }
-                            None => store.list_page(scope, filter, after, limit)?,
-                        };
-                        next = page.next;
-                        has_more = next.is_some();
-                        let list = page.messages;
+                            if through.is_none() || crossed || next.is_none() {
+                                if through.is_some() && has_more {
+                                    next = list.last().map(|last| MessageCursor { date: last.date, id: last.id }).or(through);
+                                }
+                                break;
+                            }
+                            cursor = next;
+                        }
+                        let tail = list.last().map(|last| MessageCursor { date: last.date, id: last.id });
                         let facts = list.iter().map(|each| (key(each), fact(each))).collect();
+                        last_message = tail;
                         let rows = list.into_iter().map(|each| row(each, &none)).collect();
                         Some(Indexed {
                             facts,
@@ -282,6 +319,13 @@ impl Mail {
                         kept = store.drafts_prefix(limit + 1)?;
                         has_more = kept.len() > limit;
                         kept.truncate(limit);
+                        // A newly saved draft may displace a still-selected draft from the prefix.
+                        for id in picked_drafts {
+                            if !kept.iter().any(|draft| draft.id == id) {
+                                if let Some(draft) = store.draft(id)? { kept.push(draft); }
+                            }
+                        }
+                        kept.sort_by_key(|draft| std::cmp::Reverse((draft.saved, draft.id.0)));
                         Some(index(draft_list::rows(&kept, &none)))
                     }
                     None => None,
@@ -296,7 +340,7 @@ impl Mail {
                     _ => Vec::new(),
                 };
                 let unread = store.unread()?;
-                Ok((rows, unread, kept, queued, store.pending()?, unsearched, next, has_more))
+                Ok((rows, unread, kept, queued, store.pending()?, unsearched, next, has_more, last_message))
             },
             move |mail, read_now, cx| {
                 if !mail.listing.accepts(read) {
@@ -304,7 +348,10 @@ impl Mail {
                 }
                 mail.listing.loading = false;
                 match read_now {
-                    Ok((rows, unread, kept, queued, pending, unsearched, next, has_more)) => {
+                    Ok((rows, unread, kept, queued, pending, unsearched, next, has_more, last_message)) => {
+                        if last_message.is_some() && (append || mail.listing.tail.is_none()) {
+                            mail.listing.tail = last_message;
+                        }
                         mail.listing.next = next;
                         mail.listing.has_more = has_more;
                         mail.seeking.unsearched = unsearched;

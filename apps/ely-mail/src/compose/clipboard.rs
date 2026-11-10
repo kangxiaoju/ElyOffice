@@ -1,6 +1,6 @@
 //! Background system rich clipboard and bounded inline picture import.
 
-use std::io::{Cursor, Read as _};
+use std::io::Read as _;
 use base64::Engine as _;
 use ely_gpui_component::{documents::email::{EmailAlign, EmailDocument, EmailImage}, primitives::Severity};
 use ely_mail_engine::Part;
@@ -9,28 +9,22 @@ use gpui::{AppContext as _, Context, PathPromptOptions};
 use super::Compose;
 
 const IMAGE_BYTES: usize = 16 * 1024 * 1024;
-const IMAGE_EDGE: u32 = 8192;
 
 fn picture(bytes: Vec<u8>) -> Result<(Part, EmailImage), String> {
-    if bytes.len() > IMAGE_BYTES { return Err("Picture exceeds 16 MiB".into()); }
-    let format = image::guess_format(&bytes).map_err(|error| error.to_string())?;
-    if !matches!(format, image::ImageFormat::Png | image::ImageFormat::Jpeg) {
-        return Err("Only PNG and JPEG pictures are supported".into());
-    }
-    let (width, height) = image::ImageReader::with_format(Cursor::new(&bytes), format).into_dimensions().map_err(|error| error.to_string())?;
-    if width > IMAGE_EDGE || height > IMAGE_EDGE || u64::from(width) * u64::from(height) > 32 * 1024 * 1024 { return Err("Picture exceeds 8192 pixels per edge or 32 megapixels".into()); }
-    let mut reader = image::ImageReader::with_format(Cursor::new(&bytes), format);
-    let mut limits = image::Limits::default();
-    limits.max_image_width = Some(IMAGE_EDGE);
-    limits.max_image_height = Some(IMAGE_EDGE);
-    limits.max_alloc = Some(128 * 1024 * 1024);
-    reader.limits(limits);
-    let decoded = reader.decode().map_err(|error| error.to_string())?;
+    let (_, format, width, height) = crate::letter::raster("", &bytes)
+        .map_err(|error| format!("Unsupported, damaged or oversized picture: {error:?}"))?;
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let id = format!("ely-{}-{}@inline", jiff::Timestamp::now().as_nanosecond(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-    let png = format == image::ImageFormat::Png;
-    let part = Part { name: Some(if png { "image.png" } else { "image.jpg" }.into()), content_type: if png { "image/png" } else { "image/jpeg" }.into(), params: Vec::new(), content_id: Some(id.clone()), bytes, section: None };
-    let image = EmailImage { source: format!("cid:{id}"), alt: "Picture".into(), width: Some(decoded.width()), height: Some(decoded.height()), align: EmailAlign::Left };
+    let (name, content_type) = match format {
+        image::ImageFormat::Png => ("image.png", "image/png"),
+        image::ImageFormat::Jpeg => ("image.jpg", "image/jpeg"),
+        image::ImageFormat::Gif => ("image.gif", "image/gif"),
+        image::ImageFormat::Bmp => ("image.bmp", "image/bmp"),
+        image::ImageFormat::WebP => ("image.webp", "image/webp"),
+        _ => unreachable!("raster validates the supported format set"),
+    };
+    let part = Part { name: Some(name.into()), content_type: content_type.into(), params: Vec::new(), content_id: Some(id.clone()), bytes, section: None };
+    let image = EmailImage { source: format!("cid:{id}"), alt: "Picture".into(), width: Some(width), height: Some(height), align: EmailAlign::Left };
     Ok((part, image))
 }
 
@@ -43,7 +37,7 @@ fn import_html(html: &str) -> Result<Pasted, String> {
         let remap = (|| -> Result<(), String> {
             if image.source.starts_with("data:") {
                 let (header, data) = image.source.split_once(',').ok_or("Invalid inline picture")?;
-                if !matches!(header, "data:image/png;base64" | "data:image/jpeg;base64") || data.len() > IMAGE_BYTES * 4 / 3 + 4 { return Err("Unsupported or oversized inline picture".into()); }
+                if !matches!(header, "data:image/png;base64" | "data:image/jpeg;base64" | "data:image/gif;base64" | "data:image/bmp;base64" | "data:image/webp;base64") || data.len() > IMAGE_BYTES * 4 / 3 + 4 { return Err("Unsupported or oversized inline picture".into()); }
                 let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|error| error.to_string())?;
                 let (part, imported) = picture(bytes)?;
                 image.source = imported.source;
@@ -90,22 +84,18 @@ impl Compose {
         }
         self.reading += 1;
         let job = cx.background_spawn(async move {
-            parts.into_iter().map(|part| {
-                let id = part.content_id.clone().ok_or("Picture has no CID")?;
-                let (validated, _) = picture(part.bytes)?;
-                let format = if validated.content_type == "image/png" { gpui::ImageFormat::Png } else { gpui::ImageFormat::Jpeg };
-                Ok((format!("cid:{}", id.trim_matches(['<', '>'])), std::sync::Arc::new(gpui::Image::from_bytes(format, validated.bytes))))
-            }).collect::<Result<std::collections::HashMap<_, _>, String>>()
+            parts.into_iter().filter_map(|part| {
+                let id = part.content_id.as_ref()?;
+                let (format, _, _, _) = crate::letter::raster(&part.content_type, &part.bytes).ok()?;
+                Some((format!("cid:{}", id.trim_matches(['<', '>'])), std::sync::Arc::new(gpui::Image::from_bytes(format, part.bytes))))
+            }).collect::<std::collections::HashMap<_, _>>()
         });
         cx.spawn(async move |this, cx| {
             let images = job.await;
             this.update(cx, |compose, cx| {
                 compose.reading -= 1;
                 if keys == compose.files.iter().map(|file| file.key).collect::<Vec<_>>() {
-                    match images {
-                        Ok(images) => compose.document.update(cx, |editor, cx| editor.set_images(images, cx)),
-                        Err(error) => { compose.editor_problem(error, cx); compose.unread(cx); }
-                    }
+                    compose.document.update(cx, |editor, cx| editor.set_images(images, cx));
                 }
                 compose.touched(cx);
                 cx.notify();
@@ -225,6 +215,7 @@ impl Compose {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
     #[test]
     fn rejects_svg_and_oversized_picture_before_decode() {
         assert!(picture(b"<svg/>".to_vec()).is_err());

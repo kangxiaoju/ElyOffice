@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use ely_gpui_component::documents::email::{EmailBlockKind, EmailDocument, EmailError, EmailImage, EmailParagraph, EmailText};
 use ely_mail_engine::{
     AccountId, Draft, Error, Identity, Letter, Mail as Message, Mailbox, MessageId, Part, Result,
     Store, build,
@@ -58,6 +59,8 @@ pub struct Answered {
     pub files: Vec<Part>,
     /// Forwarded files not downloaded, left out.
     pub missing: usize,
+    /// Edit-as-new content prepared and validated by the background read.
+    pub document: Option<EmailDocument>,
 }
 
 /// Everything a message is built from.
@@ -176,9 +179,21 @@ pub(super) fn answered(store: &Store, id: MessageId, how: How) -> Result<Opening
                 mail.attachments.iter().cloned().partition(waiting);
             (here, gone.len())
         }
-        How::EditAsNew => (mail.attachments.iter().chain(&mail.inline).cloned().collect(), 0),
+        How::EditAsNew => {
+            let inline = mail.inline.iter().filter(|part| {
+                // Body alternatives with Content-ID are not attachments. Other
+                // resources remain downloadable even when they cannot be drawn.
+                let kind = part.content_type.split(';').next().unwrap_or_default().trim();
+                !kind.eq_ignore_ascii_case("text/html") && !kind.eq_ignore_ascii_case("text/plain")
+                    && !kind.to_ascii_lowercase().starts_with("multipart/")
+            });
+            (mail.attachments.iter().chain(inline).cloned().collect(), 0)
+        }
         _ => (Vec::new(), 0),
     };
+    let document = if how == How::EditAsNew {
+        Some(editable_copy(&mail, &files).map_err(|error| Error::Invalid(error.to_string()))?)
+    } else { None };
     Ok(Opening {
         senders,
         from,
@@ -190,10 +205,60 @@ pub(super) fn answered(store: &Store, id: MessageId, how: How) -> Result<Opening
             whole,
             files,
             missing,
+            document,
         }),
         draft: None,
         asked: None,
     })
+}
+
+/// Import a copy without dangling CID references or mutating any original part.
+fn editable_copy(mail: &Message, files: &[Part]) -> std::result::Result<EmailDocument, EmailError> {
+    let mut document = match &mail.html {
+        Some(html) => EmailDocument::from_html(html)?,
+        None => return EmailDocument::from_plain(mail.text.as_deref().unwrap_or_default()),
+    };
+    let valid: std::collections::HashSet<&str> = files.iter().filter_map(|part| {
+        crate::letter::raster(&part.content_type, &part.bytes).ok()?;
+        part.content_id.as_deref().map(|id| id.trim_matches(['<', '>']))
+    }).collect();
+    let canonical = |image: &EmailImage| -> Option<String> {
+        let Some(cid) = image.source.strip_prefix("cid:") else { return Some(image.source.clone()); };
+        // Prefer the literal ID when '%' is genuinely part of an address.
+        if valid.contains(cid) { return Some(format!("cid:{cid}")); }
+        let decoded = percent_encoding::percent_decode_str(cid).decode_utf8().ok()?;
+        valid.contains(decoded.as_ref()).then(|| format!("cid:{decoded}"))
+    };
+    // Replace only missing/unsafe pictures with their original alternative text,
+    // including inline objects in table cells, preserving unaffected formatting.
+    let repair_text = |text: &mut EmailText| -> std::result::Result<(), EmailError> {
+        let missing: Vec<_> = text.images.iter().filter(|(_, image)| canonical(image).is_none())
+            .map(|(at, image)| (*at, image.alt.clone())).collect();
+        for (at, alt) in missing.into_iter().rev() {
+            let style = text.style_at(at);
+            text.replace(at..at + '\u{fffc}'.len_utf8(), &alt, &style)?;
+        }
+        Ok(())
+    };
+    let mut blocks = document.blocks().to_vec();
+    for block in &mut blocks {
+        match &mut block.kind {
+            EmailBlockKind::Image(image) if canonical(image).is_none() => {
+                block.kind = EmailBlockKind::Paragraph(EmailParagraph {
+                    align: image.align, content: EmailText::plain(&image.alt), ..Default::default()
+                });
+            }
+            EmailBlockKind::Paragraph(paragraph) => repair_text(&mut paragraph.content)?,
+            EmailBlockKind::Table(table) => for cell in &mut table.cells { repair_text(cell)?; },
+            _ => {}
+        }
+    }
+    document = EmailDocument::from_blocks(blocks)?;
+    document.try_map_images(|image| {
+        if let Some(source) = canonical(image) { image.source = source; }
+        Ok(())
+    })?;
+    Ok(document)
 }
 
 /// Quit and closing the main window ask each message first.

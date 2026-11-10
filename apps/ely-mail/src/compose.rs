@@ -108,10 +108,7 @@ impl Compose {
             },
             (None, Some(asked)) => EmailDocument::from_plain(&asked.body).map_err(|error| error.to_string()),
             _ => match opening.answered.as_ref().filter(|answered| answered.how == How::EditAsNew) {
-                Some(answered) => match &answered.mail.html {
-                    Some(html) => EmailDocument::from_html(html).map_err(|error| error.to_string()),
-                    None => EmailDocument::from_plain(answered.mail.text.as_deref().unwrap_or_default()).map_err(|error| error.to_string()),
-                },
+                Some(answered) => answered.document.clone().ok_or_else(|| "The editable message was not prepared".to_owned()),
                 None => Ok(EmailDocument::default()),
             },
         };

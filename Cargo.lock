@@ -2343,6 +2343,7 @@ dependencies = [
  "image",
  "jiff",
  "log",
+ "percent-encoding",
  "serde_json",
  "tempfile",
  "tokio",

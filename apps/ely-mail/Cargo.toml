@@ -30,6 +30,7 @@ gpui.workspace = true
 image.workspace = true
 jiff.workspace = true
 log.workspace = true
+percent-encoding = "2"
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
 
