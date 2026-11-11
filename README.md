@@ -21,6 +21,54 @@ Yu's `fix/yu-workspace-components` branch keeps its current Office client/worker
 
 `perf/yu-component-pacing` advances only that component pin to include optional `Spinner::max_fps`; Office implementations and worker protocols remain unchanged.
 
+### GPUI Fast migration
+
+The direct `gpui-fast` / `gpui-fast-platform` backend uses the shared Fast 0.1.14
+runtime at `kangxiaoju/Ely-GPUI-Components@40427c396cc92b6946940e0e498612a8b680ce30`
+on its independent `runtime/gpui-fast-0.1.14` branch. Core defaults are disabled;
+`stacker`, `font-kit`, `wayland` and `x11` remain explicit. Windows text language
+uses the same source's `gpui-fast-windows`. Ely components use revision
+`a528a4066f1fec3a33d46d7854e9535b03e6a54a`; IPC, document formats and worker
+dependencies are unchanged. GPUI Kit is not required.
+
+The obsolete `vendor/gpui-pre*` copies and their four patches are removed after
+porting the missing behavior below into that shared runtime. The accesskit, zbus
+and mail-parser patches remain independent. Root patches in this repository are
+not inherited by an application depending on Office.
+
+Comparison against the published `0.1.14` sources found:
+
+| Existing fix | Fast status | Minimal shared Fast change still needed |
+| --- | --- | --- |
+| Real platform quit observation (`TestAppContext::quit_requests`) | Missing API and test-platform instrumentation | Restore the context getter and `TestPlatform`'s `Cell<usize>`, initialized to zero and incremented only in `Platform::quit`; retain the tray assertions. |
+| App-selected Han text language (`set_text_language`) | Missing API and behavior | Restore the Windows export, locked app-language override, Han fallback from user language preferences, trailing-NUL locale trimming, and original language/layout tests. Fast's `DirectWriteTextSystem::new()` takes no GPU argument; adapt the native test construction accordingly. Enable `Foundation_Collections` and `System_UserProfile` on its Windows dependency. |
+| X11 XIM open-handshake guard | Included | `gpui-fast-linux/src/fast/xim.rs::is_handshake_complete` checks `connected` before `enable_ime` takes the connection. |
+| Accessibility debug timestamp capture without per-frame local-time conversion | Included | Fast captures `SystemTime` in `src/fast/a11y.rs::CapturedAt` and formats it only on dump. |
+| Invalid animated-image frame terminates decoding | Missing | In core `src/platform.rs::decode_animated_frames`, return `Err(err.into())` instead of skipping errors. Fast shares this decoder between GIF/WebP assets and image-data conversion. |
+| AT-SPI window screen bounds on activation and move/resize | Missing | In core `src/window.rs`, call `platform_window.a11y_update_window_bounds()` before activation refresh and in `bounds_changed`. |
+| Topmost Windows titlebar control hit-test | Missing | In core `src/window.rs`'s control hit-test callback, walk `mouse_hit_test.ids.iter().take(hover_hitbox_count)` in order, finding each ID in `window_control_hitboxes`, rather than walking registered controls first. |
+| macOS accessibility first-responder view | Missing | In `gpui-fast-macos/src/window.rs`, use `SubclassingAdapter::new(native_view.as_ptr() as *mut c_void, ...)` instead of `for_window(native_window, ...)`. Keep adapter teardown to break the retain cycle. |
+| Windows accessibility initial active state | Missing | In `gpui-fast-windows/src/window.rs::a11y_init`, use `self.is_active()` rather than `GetForegroundWindow()`. |
+| Windows native window destruction and tasks after quit | Missing | Port the `destroyed` state, drag/drop revocation and active-callback removal in `events.rs`, the no-second-destroy guard in `window.rs`, and the invalid-window-handle shutdown handling in `dispatcher.rs`. |
+| Windows Save As extension | Missing | In Windows `platform.rs::file_save_dialog`, derive the extension/filter from `suggested_name` before consuming it and call `SetDefaultExtension`, keeping the all-files option. |
+| Windows pinned-window grouping | Missing Office-specific behavior | Preserve Office's absence of a process AUMID call in Windows `platform.rs::set_app_identity`, while still storing the app identity. |
+
+No existing Fast public API replaces either missing quit observation or
+app-selected text language. Their Office callers and tests intentionally remain
+intact; the published release alone is not sufficient to complete this migration.
+
+On Windows, Fast's platform dependency enables its core `windows-manifest`
+feature even with defaults disabled. Keep it: Office's build script embeds only
+an icon, not a host manifest. `windows-manifest-provided-by-host` skips Fast's
+manifest entirely and must not be enabled here; Fast supplies PerMonitorV2 DPI
+awareness and the common-controls declaration. Build LOK/PDF workers separately
+from UI applications (as below), so UI features do not leak into workers.
+
+The shared runtime's Linux platform builds and core tests have been exercised by
+the integrating Yu migration. Office application/worker integration and native
+macOS/Windows behavior require their own checks; this source comparison is not
+evidence of platform parity.
+
 ## Build
 
 Install Rust with [rustup](https://rustup.rs) (`rust-toolchain.toml` pins the version), then the system packages. Every system also needs Git, Python 3, curl, Node.js 22.18 or newer (the first to run the site's TypeScript tests unflagged) and pnpm (`check.sh` and the site use the last two).

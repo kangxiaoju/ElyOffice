@@ -21,7 +21,7 @@ notify.workspace = true
 serde_json.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
-gpui_windows = { package = "gpui-pre-windows", version = "=0.3.10" }
+gpui_windows = { package = "gpui-fast-windows", git = "https://github.com/kangxiaoju/Ely-GPUI-Components.git", rev = "40427c396cc92b6946940e0e498612a8b680ce30", default-features = false }
 
 [features]
 frames = ["gpui/profiler"]
