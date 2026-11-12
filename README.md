@@ -28,7 +28,7 @@ runtime at `kangxiaoju/Ely-GPUI-Components@40427c396cc92b6946940e0e498612a8b680c
 on its independent `runtime/gpui-fast-0.1.14` branch. Core defaults are disabled;
 `stacker`, `font-kit`, `wayland` and `x11` remain explicit. Windows text language
 uses the same source's `gpui-fast-windows`. Ely components use revision
-`04ab848ec2da3d8d9eafe878e41f8b3bb6368875`, including multi-node graph search
+`8b9ab8b1a827bcb6102eaecabffd0b1f623d5401`, including multi-node graph search
 highlights and the existing activation/read-only APIs; IPC, document formats and
 worker dependencies are unchanged. GPUI Kit is not required.
 
