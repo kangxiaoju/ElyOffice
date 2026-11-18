@@ -20,10 +20,10 @@ jiff = "0.2"
 anyhow = "1"
 directories = "6"
 dunce = "1"
-ely-gpui-component = { git = "https://github.com/kangxiaoju/Ely-GPUI-Components.git", rev = "0352fa606291687f89a9ba2a60b2c1cc72719a33" }
+ely-gpui-component = { git = "https://github.com/kangxiaoju/Ely-GPUI-Components.git", rev = "cd2911a4bddfac9397c38c5336e4335cf68c9a89" }
 env_logger = "0.11"
-gpui = { package = "gpui-fast", git = "https://github.com/kangxiaoju/Ely-GPUI-Components.git", rev = "40427c396cc92b6946940e0e498612a8b680ce30", default-features = false, features = ["stacker"] }
-gpui_platform = { package = "gpui-fast-platform", git = "https://github.com/kangxiaoju/Ely-GPUI-Components.git", rev = "40427c396cc92b6946940e0e498612a8b680ce30", default-features = false, features = ["font-kit", "wayland", "x11"] }
+gpui = { package = "gpui-fast", git = "https://github.com/kangxiaoju/Ely-GPUI-Components.git", rev = "65bc1fced7a56d91142671c01fea3eaa22cf1024", default-features = false, features = ["stacker"] }
+gpui_platform = { package = "gpui-fast-platform", git = "https://github.com/kangxiaoju/Ely-GPUI-Components.git", rev = "65bc1fced7a56d91142671c01fea3eaa22cf1024", default-features = false, features = ["font-kit", "wayland", "x11"] }
 futures = "0.3"
 libc = "0.2"
 log = "0.4"

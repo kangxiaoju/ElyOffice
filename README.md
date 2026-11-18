@@ -24,13 +24,15 @@ Yu's `fix/yu-workspace-components` branch keeps its current Office client/worker
 ### GPUI Fast migration
 
 The direct `gpui-fast` / `gpui-fast-platform` backend uses the shared Fast 0.1.14
-runtime at `kangxiaoju/Ely-GPUI-Components@40427c396cc92b6946940e0e498612a8b680ce30`
+runtime at `kangxiaoju/Ely-GPUI-Components@65bc1fced7a56d91142671c01fea3eaa22cf1024`
 on its independent `runtime/gpui-fast-0.1.14` branch. Core defaults are disabled;
 `stacker`, `font-kit`, `wayland` and `x11` remain explicit. Windows text language
 uses the same source's `gpui-fast-windows`. Ely components use revision
-`ebdedc0a4f250cdbd58d3fbf7f762981c8650bf6`, including controlled mind-map branch
-folding, multi-node graph search highlights and activation/read-only APIs; IPC,
-document formats and worker dependencies are unchanged. GPUI Kit is not required.
+`cd2911a4bddfac9397c38c5336e4335cf68c9a89`, retaining controlled mind-map branch
+folding, multi-node graph search highlights and activation/read-only APIs. These
+pins include the shared Wayland shutdown and LSP lifecycle fixes across production,
+development and platform dependencies; IPC, document formats and worker dependencies
+are unchanged. GPUI Kit is not required.
 
 The obsolete `vendor/gpui-pre*` copies and their four patches are removed after
 porting the missing behavior below into that shared runtime. The accesskit, zbus
