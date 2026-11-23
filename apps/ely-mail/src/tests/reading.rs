@@ -113,8 +113,8 @@ fn empty_oversized_and_overdimensioned_pictures_are_not_successes() {
     assert!(letter::held("image/png", bytes, &words).is_err());
 }
 
-/// Serves a PNG to every request; counts them.
-pub(super) fn pictures() -> (String, Arc<AtomicUsize>) {
+/// Serves one picture response to every request; counts them.
+fn picture_server(kind: Option<&'static str>, bytes: Vec<u8>) -> (String, Arc<AtomicUsize>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let served = Arc::new(AtomicUsize::new(0));
@@ -128,14 +128,24 @@ pub(super) fn pictures() -> (String, Arc<AtomicUsize>) {
                 line.clear();
             }
             let mut stream = stream;
-            let bytes = png();
-            let head = format!("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\n\r\n", bytes.len());
+            let kind = kind
+                .map(|kind| format!("Content-Type: {kind}\r\n"))
+                .unwrap_or_default();
+            let head = format!(
+                "HTTP/1.1 200 OK\r\n{kind}Content-Length: {}\r\n\r\n",
+                bytes.len()
+            );
             stream.write_all(head.as_bytes()).unwrap();
             stream.write_all(&bytes).unwrap();
             count.fetch_add(1, Ordering::SeqCst);
         }
     });
     (format!("http://127.0.0.1:{port}/a.png"), served)
+}
+
+/// Serves a PNG to every request; counts them.
+pub(super) fn pictures() -> (String, Arc<AtomicUsize>) {
+    picture_server(Some("image/png"), png())
 }
 
 /// HTML with a logo, a web picture, a waiting file.
@@ -314,6 +324,36 @@ fn allowed_pictures_come_and_a_trusted_sender_needs_no_asking() {
     });
     let store = Store::open(dir.path()).unwrap();
     assert!(!store.trusts("ann@example.com").unwrap());
+}
+
+#[test]
+fn allowed_pictures_use_bytes_when_mime_is_missing_or_wrong() {
+    for (kind, format) in [
+        (None, image::ImageFormat::Jpeg),
+        (Some("text/json"), image::ImageFormat::Png),
+    ] {
+        let mut bytes = Vec::new();
+        image::RgbImage::from_pixel(16, 12, image::Rgb([40, 120, 200]))
+            .write_to(&mut std::io::Cursor::new(&mut bytes), format)
+            .unwrap();
+        let (web, served) = picture_server(kind, bytes);
+        let dir = tempfile::tempdir().unwrap();
+        seeded(dir.path(), &web);
+        let mut cx = TestAppContext::single();
+        let (mail, cx) = window(&mut cx, dir.path(), Keys::default());
+        pick(&mail, "first", cx);
+        on_picked(&mail, cx, Mail::load_pictures);
+        settle(cx, |app| {
+            opened(&mail, app).is_some_and(|open| open.pictures.contains_key(&web))
+        });
+        cx.update(|_, app| {
+            assert!(
+                picture_came(&mail, &web, app),
+                "MIME {kind:?} hid valid {format:?} bytes"
+            );
+        });
+        assert_eq!(served.load(Ordering::SeqCst), 1);
+    }
 }
 
 #[test]

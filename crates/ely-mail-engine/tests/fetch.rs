@@ -39,9 +39,7 @@ fn a_web_picture_comes_with_its_type() {
 
 #[test]
 fn only_web_pictures_under_the_limit_are_taken() {
-    let page = serve("text/html", b"<p>no</p>".to_vec());
     let refused = |result: ely_mail_engine::Result<_>| matches!(result, Err(Error::Fetch(_)));
-    assert!(refused(fetch::picture(&page)));
     assert!(refused(fetch::picture("file:///etc/passwd")));
     let huge = serve("image/png", vec![0; fetch::LARGEST as usize + 1]);
     assert!(refused(fetch::picture(&huge)));
