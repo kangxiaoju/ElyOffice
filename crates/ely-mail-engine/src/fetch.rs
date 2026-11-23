@@ -32,9 +32,6 @@ pub fn picture(url: &str) -> Result<(String, Vec<u8>)> {
         .and_then(|value| value.split(';').next())
         .map(|value| value.trim().to_ascii_lowercase())
         .unwrap_or_default();
-    if !kind.starts_with("image/") {
-        return Err(Error::Fetch(format!("{kind:?} is not a picture")));
-    }
     let bytes = response
         .body_mut()
         .with_config()
