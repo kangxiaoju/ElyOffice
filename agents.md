@@ -40,7 +40,7 @@ site/        官网（Vite 8、pnpm、TypeScript，无框架；`/docs` 命令行
 
 ## 组件映射
 
-依赖 `ely-gpui-component`（pin 86874ef，含 `TextInput::clear_sensitive`；gpui 为 crates.io 的 `gpui-pre` =0.3.10，Rust 1.98.1）。名字取自 `reference/Ely-GPUI-Components`：总包 `src/lib.rs` 列出各模块在哪个 crate。gpui 用法规则见该仓库 `AGENTS.md`。`tests/scripts/agents_md.py` 核对下表每个名字都是组件库公开项。
+依赖 `ely-gpui-component`，固定 revision `2ef07a3e8c4d936773f696b5dc8d46b74cff091e`；与 Yu 和 ELYTerminal 统一来源，避免嵌入时重复注册 Ely action。gpui-fast 固定 `65bc1fced7a56d91142671c01fea3eaa22cf1024`。gpui 用法规则见组件库 `AGENTS.md`。`tests/scripts/agents_md.py` 核对下表每个名字都是组件库公开项。
 
 | 需要 | 用 |
 | --- | --- |
