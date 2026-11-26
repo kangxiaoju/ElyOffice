@@ -216,6 +216,16 @@ pub(crate) fn attach(app: AppId, mail: &Entity<Mail>, again: bool, window: &mut 
 }
 
 impl Mail {
+    /// Shows inboxes when the host opens a new-mail notification.
+    pub fn open_inboxes(&mut self, cx: &mut Context<Self>) {
+        self.stop_seeking(cx);
+        self.filter = Filter::default();
+        self.open_box(Open::Inboxes, cx);
+    }
+
+    /// Pauses hosted background synchronization before disposal.
+    pub fn shutdown(&mut self, cx: &mut Context<Self>) { self.set_paused(true, cx); }
+
     pub fn new(parts: Parts, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)

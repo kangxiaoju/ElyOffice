@@ -119,6 +119,13 @@ impl Worker {
         Ok(worker)
     }
 
+    /// Starts and verifies the worker at an explicitly supplied executable path.
+    pub fn spawn_from(worker_bin: &Path, install: &Path, profile_dir: &Path) -> io::Result<Self> {
+        let mut worker = Self::spawn_mode_with_bin(install, profile_dir, false, None, Some(worker_bin))?;
+        worker.ready()?;
+        Ok(worker)
+    }
+
     /// Starts the process only; the first request checks it.
     pub fn launch(install: &Path, profile_dir: &Path, probe: crate::Probe) -> io::Result<Self> {
         let mut worker = Self::spawn_mode(install, profile_dir, false, None)?;
@@ -140,11 +147,18 @@ impl Worker {
         dev: bool,
         idle: Option<(&str, std::fs::File)>,
     ) -> io::Result<Self> {
+        Self::spawn_mode_with_bin(install, profile_dir, dev, idle, None)
+    }
+
+    fn spawn_mode_with_bin(
+        install: &Path, profile_dir: &Path, dev: bool,
+        idle: Option<(&str, std::fs::File)>, bin: Option<&Path>,
+    ) -> io::Result<Self> {
         let session = SESSIONS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let private = endpoint::name(session)?;
         let (public, log) = idle.unzip();
         let start = (install.to_path_buf(), profile_dir.to_path_buf(), dev);
-        let (command, bin) = command::build(&start, &private, public)?;
+        let (command, bin) = command::build_with_bin(&start, &private, public, bin)?;
         let (feed, (sender, replies)) = (Feed::default(), mpsc::channel());
         let (wired, wiring) = mpsc::channel();
         let then = command::reach_then(private, install.to_path_buf(), feed.clone(), sender, wired);

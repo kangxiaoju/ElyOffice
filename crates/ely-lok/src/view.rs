@@ -59,6 +59,7 @@ pub struct Reported;
 
 /// Paints one LOK document as a cached tile grid (LOK-03).
 pub struct LokView {
+    read_only: bool,
     worker: Arc<Mutex<Worker>>,
     doc: Doc,
     geom: Geom,
@@ -165,6 +166,11 @@ impl EventEmitter<LokError> for LokView {}
 impl EventEmitter<Reported> for LokView {}
 
 impl LokView {
+    /// Rejects edits before they reach the worker queue.
+    pub fn set_read_only(&mut self, read_only: bool) { self.read_only = read_only; }
+    /// Reports whether edits are disabled for this view.
+    pub fn is_read_only(&self) -> bool { self.read_only }
+
     /// A view of `doc` at `layout`; starts the event watch.
     pub fn open(
         worker: Arc<Mutex<Worker>>,
@@ -204,6 +210,7 @@ impl LokView {
             failed: HashSet::new(),
             shown: None,
             viewport: (0.0, 0.0),
+            read_only: false,
             origin: Point::default(),
             spare: (0.0, 0.0),
             frozen: (0, 0),

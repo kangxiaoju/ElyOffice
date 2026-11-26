@@ -16,9 +16,13 @@ type Replies = mpsc::Sender<io::Result<(u8, u64, Vec<u8>)>>;
 
 /// The worker on `private`, idle on `idle` once checked.
 pub(super) fn build(start: &(PathBuf, PathBuf, bool), private: &str, idle: Option<&str>) -> io::Result<(Command, PathBuf)> {
+    build_with_bin(start, private, idle, None)
+}
+
+pub(super) fn build_with_bin(start: &(PathBuf, PathBuf, bool), private: &str, idle: Option<&str>, bin: Option<&std::path::Path>) -> io::Result<(Command, PathBuf)> {
     let (install, profile_dir, dev) = start;
     std::fs::create_dir_all(profile_dir).map_err(at(profile_dir))?;
-    let bin = worker_bin()?;
+    let bin = match bin { Some(path) => path.to_path_buf(), None => worker_bin()? };
     log::info!("lok: worker from {}", bin.display());
     let mut command = Command::new(&bin);
     ely_ipc::windowless(&mut command)

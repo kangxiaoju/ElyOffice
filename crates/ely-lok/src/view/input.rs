@@ -252,6 +252,7 @@ fn apply(worker: &mut Worker, doc: &Doc, input: Input) -> io::Result<Option<Back
 impl LokView {
     /// Queues `input` in order; edits mark the view pending.
     pub(super) fn send(&mut self, input: Input) {
+        if self.read_only && input.edits() { return; }
         self.sent += 1;
         if input.edits() {
             self.last_edit = self.sent;
