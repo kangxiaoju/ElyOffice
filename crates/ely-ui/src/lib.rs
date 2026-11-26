@@ -37,7 +37,8 @@ pub use run::{run, window_options};
 pub use shell::{Root, Shell, blank, document_root, root, set_document_menus, tool_root};
 pub use tasks::{LongTask, TaskState};
 
-struct Embedded;
+/// Marks initialization owned by an embedding host.
+pub struct Embedded;
 impl gpui::Global for Embedded {}
 
 /// Installs Office catalogs and settings without taking over the host lifecycle.
