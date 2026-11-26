@@ -271,10 +271,11 @@ impl Render for Mail {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Contacts need no account, so the side shows once read.
         let left = matches!(self.accounts, Some(Ok(_))).then(|| self.side.clone().into());
-        let shell = Shell::new(AppId::Mail.name(), &self.focus)
+        let mut shell = Shell::new(AppId::Mail.name(), &self.focus)
             .left(left)
             .status(self.status_bar(cx))
             .child(self.body(window, cx));
+        if self.embedded { shell = shell.bare(); }
         div()
             .size_full()
             .key_context(menu::CONTEXT)

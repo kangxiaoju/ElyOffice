@@ -40,6 +40,7 @@ pub struct Shell {
     toolbar: Option<Toolbar>,
     page: Option<ElementId>,
     main: bool,
+    bare: bool,
     body: Vec<AnyElement>,
 }
 
@@ -55,8 +56,16 @@ impl Shell {
             toolbar: None,
             page: None,
             main: true,
+            bare: false,
             body: Vec::new(),
         }
+    }
+
+    /// Draws inside a host-owned tab without title chrome or resize borders.
+    pub fn bare(mut self) -> Self {
+        self.bare = true;
+        self.main = false;
+        self
     }
 
     /// Beside the main window: no menus, no update banner.
@@ -172,21 +181,24 @@ impl RenderOnce for Shell {
         panel::budget(&mut drawn_left, &mut drawn_right, window, cx);
         let row = div().flex_1().min_h_0().flex().child(content).child(SidePanel::new(Side::Right, drawn_right));
         let frame = AppShell::new()
-            .title_bar(header)
             .sidebar(SidePanel::new(Side::Left, drawn_left))
             .child(row);
+        let frame = if self.bare { frame } else { frame.title_bar(header) };
         let frame = match self.status {
             Some(bar) => frame.status_bar(bar),
             None => frame,
         };
         let theme = cx.theme();
-        ResizeBorder::new().child(
-            FocusScope::new(&self.focus)
-                .root()
-                .size_full()
-                .font_family(theme.font_family.clone())
-                .text_size(theme.text_size(TextSize::Base))
-                .child(frame),
-        )
+        let content = FocusScope::new(&self.focus)
+            .root()
+            .size_full()
+            .font_family(theme.font_family.clone())
+            .text_size(theme.text_size(TextSize::Base))
+            .child(frame);
+        if self.bare {
+            content.into_any_element()
+        } else {
+            ResizeBorder::new().child(content).into_any_element()
+        }
     }
 }

@@ -36,3 +36,15 @@ pub use theme::install as install_theme;
 pub use run::{run, window_options};
 pub use shell::{Root, Shell, blank, document_root, root, set_document_menus, tool_root};
 pub use tasks::{LongTask, TaskState};
+
+struct Embedded;
+impl gpui::Global for Embedded {}
+
+/// Installs Office catalogs and settings without taking over the host lifecycle.
+pub fn embed_init(app: ely_platform::AppId, cx: &mut gpui::App) {
+    if cx.has_global::<Embedded>() { return; }
+    settings::install(app, cx);
+    i18n::install(cx);
+    commands::bind_keys(cx);
+    cx.set_global(Embedded);
+}

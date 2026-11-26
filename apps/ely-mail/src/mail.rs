@@ -37,6 +37,14 @@ pub type Opener = Arc<dyn Fn(&Path) -> std::io::Result<()> + Send + Sync>;
 /// The OAuth server for a way of signing in.
 pub type Providers = Arc<dyn Fn(Auth) -> Option<ely_mail_engine::Result<oauth::Provider>> + Send + Sync>;
 
+/// A new-mail notice delivered to the embedding host.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MailNotice {
+    pub tag: SharedString,
+    pub title: SharedString,
+    pub body: SharedString,
+}
+
 /// What the engine runs on and keeps to.
 pub struct Parts {
     pub store: Result<Store, String>,
@@ -137,6 +145,8 @@ pub struct Mail {
     /// Asked once, the quit goes on.
     pub quit_anyway: bool,
     pub focus: FocusHandle,
+    pub embedded: bool,
+    pub host_notices: bool,
     pub root: WeakEntity<Root>,
     pub side: Entity<Side>,
 }
@@ -144,6 +154,25 @@ pub struct Mail {
 pub fn text(cx: &App, key: &str, args: &[(&str, &str)]) -> SharedString {
     ely_ui::i18n::text(cx, key, args)
 }
+
+/// Builds mail content without taking ownership of the host window.
+pub fn embed(dir: &Path, window: &mut Window, cx: &mut App) -> Entity<Mail> {
+    ely_ui::embed_init(AppId::Mail, cx);
+    cx.new(|cx| {
+        let mut mail = Mail::new(Parts::system(dir), window, cx);
+        mail.embedded = true;
+        mail
+    })
+}
+
+/// Keeps new-mail notifications under the host application's control.
+pub fn host(dir: &Path, window: &mut Window, cx: &mut App) -> Entity<Mail> {
+    let mail = embed(dir, window, cx);
+    mail.update(cx, |mail, _| mail.host_notices = true);
+    mail
+}
+
+impl gpui::EventEmitter<MailNotice> for Mail {}
 
 pub fn open(app: AppId, window: &mut Window, cx: &mut App) -> Entity<Root> {
     let dir = match ely_platform::data_dir(app) {
@@ -261,6 +290,8 @@ impl Mail {
             open_copy: parts.open,
             quitting: false,
             quit_anyway: false,
+            embedded: false,
+            host_notices: false,
             focus: cx.focus_handle(),
             root: WeakEntity::new_invalid(),
             side: cx.new(|_| Side::new(this)),
